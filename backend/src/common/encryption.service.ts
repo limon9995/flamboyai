@@ -20,7 +20,7 @@ export class EncryptionService {
       this.key = Buffer.alloc(32, 0);
     } else {
       // scrypt KDF: work factor N=2^14, fixed salt derived from key material
-      const salt = crypto.createHash('sha256').update('chatcat-enc-salt-v1').digest();
+      const salt = crypto.createHash('sha256').update('FlamboyAI-enc-salt-v1').digest();
       this.key = crypto.scryptSync(raw, salt, 32, { N: 16384, r: 8, p: 1 });
     }
   }

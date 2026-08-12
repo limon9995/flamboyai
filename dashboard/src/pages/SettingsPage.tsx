@@ -6,6 +6,17 @@ import { useLanguage } from '../i18n';
 import { DHAKA_ZONES } from '../data/dhaka-areas';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+// V29: one row in the product-card button list — 'order'/'details' reuse the
+// bot's built-in actions with a custom label, 'custom' opens a link or sends
+// a fixed reply text when clicked.
+interface CardButton {
+  id: string;
+  type: 'order' | 'details' | 'custom';
+  label: string;
+  url?: string;
+  replyText?: string;
+}
+
 interface Settings {
   businessName: string; businessPhone: string; businessAddress: string;
   websiteUrl: string;
@@ -21,6 +32,8 @@ interface Settings {
   restaurantLat: number | null;
   restaurantLng: number | null;
   deliverySlabs: { maxKm: number; fee: number }[];
+  // V29: Messenger product-card buttons — [] means "use the built-in default"
+  cardButtons: CardButton[];
   smsGatewayEnabled: boolean;
   automationOn: boolean; ocrOn: boolean;
   waEnabled: boolean; waPhoneNumberId: string; waVerifyToken: string; waTokenSet: boolean; waFallbackTemplateName: string;
@@ -68,6 +81,7 @@ const S0: Settings = {
   paymentMode: 'cod', advanceAmount: 0, advanceBkash: '', advanceNagad: '', advanceRocket: '', advancePaymentMessage: '', webOrderEnabled: false, smsGatewayEnabled: false,
   codEnabled: true, advanceThresholdAmount: 0,
   restaurantModeEnabled: false, restaurantLat: null, restaurantLng: null, deliverySlabs: [],
+  cardButtons: [],
   knowledgeText: '',
   customPersonaPrompt: '',
   automationOn: false, ocrOn: false,
@@ -160,6 +174,77 @@ function SaveRow({ onClick, saving, label = 'Save Changes' }: { onClick: () => v
       }}>
         {saving && <Spinner size={13} color="#fff"/>} {label}
       </button>
+    </div>
+  );
+}
+
+// ── V29: Product card buttons editor ─────────────────────────────────────────
+const CARD_BTN_TYPES = [
+  { v: 'order', label: 'Order' },
+  { v: 'details', label: 'Details' },
+  { v: 'custom', label: 'Custom' },
+] as const;
+const MAX_CARD_BUTTONS = 3;
+
+function CardButtonsEditor({ th, buttons, onChange }: {
+  th: Theme; buttons: CardButton[]; onChange: (b: CardButton[]) => void;
+}) {
+  const { copy } = useLanguage();
+  const update = (i: number, patch: Partial<CardButton>) =>
+    onChange(buttons.map((b, j) => j === i ? { ...b, ...patch } : b));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {buttons.map((b, i) => (
+        <div key={b.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 12, borderRadius: 10, border: `1px solid ${th.border}`, background: th.surface }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select style={{ ...th.input, width: 120, padding: '7px 10px' }} value={b.type}
+              onChange={e => update(i, { type: e.target.value as CardButton['type'], url: undefined, replyText: undefined })}>
+              {CARD_BTN_TYPES.map(t => <option key={t.v} value={t.v}>{t.label}</option>)}
+            </select>
+            <input style={{ ...th.input, flex: 1, padding: '7px 10px' }} maxLength={30}
+              placeholder={copy('Button-এর লেখা (যেমন: Order করব)', 'Button label (e.g. Order now)')}
+              value={b.label} onChange={e => update(i, { label: e.target.value })} />
+            <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 18, padding: '0 4px' }}
+              onClick={() => onChange(buttons.filter((_, j) => j !== i))}>×</button>
+          </div>
+          {b.type === 'order' && (
+            <div style={{ fontSize: 11.5, color: th.muted }}>{copy('ক্লিক করলে order শুরু হবে (draft flow)', 'Clicking this starts the order draft flow')}</div>
+          )}
+          {b.type === 'details' && (
+            <div style={{ fontSize: 11.5, color: th.muted }}>{copy('ক্লিক করলে product details দেখাবে (catalog link অথবা in-chat)', 'Clicking this shows product details (catalog link or in-chat)')}</div>
+          )}
+          {b.type === 'custom' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button style={{ ...th.btnGhost, fontSize: 11.5, padding: '5px 10px', ...(b.url !== undefined ? { borderColor: th.accent, color: th.accent } : {}) }}
+                  onClick={() => update(i, { url: '', replyText: undefined })}>🔗 {copy('Link', 'Link')}</button>
+                <button style={{ ...th.btnGhost, fontSize: 11.5, padding: '5px 10px', ...(b.replyText !== undefined ? { borderColor: th.accent, color: th.accent } : {}) }}
+                  onClick={() => update(i, { replyText: '', url: undefined })}>💬 {copy('Reply text', 'Reply text')}</button>
+              </div>
+              {b.url !== undefined && (
+                <input style={{ ...th.input, padding: '7px 10px' }} placeholder="https://..."
+                  value={b.url} onChange={e => update(i, { url: e.target.value })} />
+              )}
+              {b.replyText !== undefined && (
+                <textarea style={{ ...th.input, minHeight: 60, padding: '7px 10px', fontFamily: 'inherit', resize: 'vertical' }} maxLength={500}
+                  placeholder={copy('Customer বাটন চাপলে এই text reply পাবে', 'Customer receives this text when they tap the button')}
+                  value={b.replyText} onChange={e => update(i, { replyText: e.target.value })} />
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+      {buttons.length < MAX_CARD_BUTTONS && (
+        <button style={{ ...th.btnGhost, fontSize: 12, alignSelf: 'flex-start' }} onClick={() => {
+          onChange([...buttons, { id: `btn_${Date.now().toString(36)}`, type: 'custom', label: '', replyText: '' }]);
+        }}>+ {copy('Button যোগ করুন', 'Add button')}</button>
+      )}
+      <div style={{ fontSize: 11.5, color: th.muted }}>
+        {buttons.length === 0
+          ? copy('কিছু set করা না থাকলে default button (Order + Details) দেখানো হবে।', 'When nothing is set, the default buttons (Order + Details) are shown.')
+          : copy(`Messenger card-এ সর্বোচ্চ ${MAX_CARD_BUTTONS}টা button দেখানো যায়।`, `Messenger cards can show at most ${MAX_CARD_BUTTONS} buttons.`)}
+      </div>
     </div>
   );
 }
@@ -750,7 +835,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                 placeholder="https://yourstore.com"
               />
               <div style={{ fontSize: 11.5, color: th.muted, marginTop: 5 }}>
-                {copy('খালি রাখলে bot আপনার ChatCat catalog link পাঠাবে।', 'Leave empty to use your ChatCat hosted catalog link.')}
+                {copy('খালি রাখলে bot আপনার FlamboyAI catalog link পাঠাবে।', 'Leave empty to use your FlamboyAI hosted catalog link.')}
               </div>
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
@@ -1145,7 +1230,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
             <div style={{ padding: '10px 12px', borderRadius: 10, background: th.surface, border: `1px solid ${th.border}` }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>📋 Webhook URL (Meta Console-এ দিন)</div>
               <div style={{ fontSize: 12, fontFamily: 'monospace', color: th.accent, wordBreak: 'break-all' }}>
-                {`${(typeof window !== 'undefined' ? window.location.origin.replace(/:\d+$/, ':3000').replace('app.chatcat.pro', 'api.chatcat.pro') : 'https://api.chatcat.pro')}/wa-webhook`}
+                {`${(typeof window !== 'undefined' ? window.location.origin.replace(/:\d+$/, ':3000').replace('app.flamboyai.com', 'api.flamboyai.com') : 'https://api.flamboyai.com')}/wa-webhook`}
               </div>
               <div style={{ fontSize: 11, color: th.muted, marginTop: 4 }}>
                 Meta App → Webhook → Edit → এই URL দিন, Verify Token-ও দিন
@@ -1198,7 +1283,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                 </div>
                 {[
                   copy('ক. Instagram app → Profile → ☰ → Settings and privacy → "Account type and tools" → "Switch to Professional Account" → Business বা Creator select করুন', 'a. Instagram app → Profile → ☰ → Settings and privacy → "Account type and tools" → "Switch to Professional Account" → select Business or Creator'),
-                  copy('খ. Settings → Account → "Linked accounts" → Facebook → আপনার Facebook account দিয়ে login করুন → customer-এর Facebook Page select করুন (যেটি Chatcat-এ connected)', 'b. Settings → Account → "Linked accounts" → Facebook → log in with the Facebook account → select the customer\'s Facebook Page (the one connected in Chatcat)'),
+                  copy('খ. Settings → Account → "Linked accounts" → Facebook → আপনার Facebook account দিয়ে login করুন → customer-এর Facebook Page select করুন (যেটি FlamboyAI-এ connected)', 'b. Settings → Account → "Linked accounts" → Facebook → log in with the Facebook account → select the customer\'s Facebook Page (the one connected in FlamboyAI)'),
                   copy('গ. Instagram Profile → Edit Profile → "Page" section-এ Page-এর নাম দেখাবে — link confirm', 'c. Instagram Profile → Edit Profile → the Page name will appear in the "Page" section — link confirmed'),
                 ].map((step, i) => (
                   <div key={i} style={{ display: 'flex', gap: 8, fontSize: 11.5, padding: '5px 0', borderBottom: i < 2 ? `1px solid rgba(99,102,241,0.1)` : 'none' }}>
@@ -1292,7 +1377,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
             <div style={{ padding: '10px 12px', borderRadius: 10, background: th.surface, border: `1px solid ${th.border}` }}>
               <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>📋 Webhook URL (Meta Console-এ দিন)</div>
               <div style={{ fontSize: 12, fontFamily: 'monospace', color: th.accent, wordBreak: 'break-all' }}>
-                {`${(typeof window !== 'undefined' ? window.location.origin.replace(/:\d+$/, ':3000').replace('app.chatcat.pro', 'api.chatcat.pro') : 'https://api.chatcat.pro')}/ig-webhook`}
+                {`${(typeof window !== 'undefined' ? window.location.origin.replace(/:\d+$/, ':3000').replace('app.flamboyai.com', 'api.flamboyai.com') : 'https://api.flamboyai.com')}/ig-webhook`}
               </div>
               <div style={{ fontSize: 11, color: th.muted, marginTop: 4 }}>
                 Meta App → Instagram → Webhooks → এই URL দিন। Subscribe করুন: messages, comments
@@ -1956,7 +2041,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                 {[
                   { icon: '1️⃣', text: copy('Customer আপনার bKash/Nagad/Rocket নম্বরে টাকা পাঠায়', 'Customer sends money to your bKash/Nagad/Rocket number') },
                   { icon: '2️⃣', text: copy('আপনার ফোনে payment received SMS আসে', 'Your phone receives a payment received SMS') },
-                  { icon: '3️⃣', text: copy('SMS Forwarder app সেই SMS টা chatcat-এ পাঠায়', 'SMS Forwarder app sends that SMS to chatcat') },
+                  { icon: '3️⃣', text: copy('SMS Forwarder app সেই SMS টা FlamboyAI-এ পাঠায়', 'SMS Forwarder app sends that SMS to FlamboyAI') },
                   { icon: '4️⃣', text: copy('Customer Messenger-এ TxID বা phone number দেয়', 'Customer gives TxID or phone number in Messenger') },
                   { icon: '5️⃣', text: copy('Bot SMS-এর সাথে match করে → ✅ Auto confirm!', 'Bot matches with SMS → ✅ Auto confirm!') },
                 ].map(({ icon, text }) => (
@@ -2023,11 +2108,11 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {[
                       {
-                        name: 'ChatCat PaySync',
+                        name: 'FlamboyAI PaySync',
                         badge: copy('⭐ অফিসিয়াল (প্রস্তাবিত)', '⭐ Official (Recommended)'),
                         badgeColor: '#10b981',
-                        desc: copy('চ্যাটক্যাট-এর নিজস্ব পেমেন্ট সিঙ্ক অ্যাপ। সবচেয়ে সহজ ও সবচেয়ে বিশ্বস্ত।', 'ChatCat\'s own payment sync app. Simplest and most reliable.'),
-                        url: `${API_BASE}/storage/downloads/chatcat-paysync.apk`,
+                        desc: copy('চ্যাটক্যাট-এর নিজস্ব পেমেন্ট সিঙ্ক অ্যাপ। সবচেয়ে সহজ ও সবচেয়ে বিশ্বস্ত।', 'FlamboyAI\'s own payment sync app. Simplest and most reliable.'),
+                        url: `${API_BASE}/storage/downloads/FlamboyAI-paysync.apk`,
                         btnText: copy('⬇ APK Download', '⬇ APK Download'),
                         btnColor: '#10b981',
                       },
@@ -2057,7 +2142,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                     🔑 {copy('ধাপ ২ — Secret Token copy করুন', 'Step 2 — Copy Secret Token')}
                   </div>
                   <div style={{ fontSize: 12.5, color: th.muted, marginBottom: 10, lineHeight: 1.5 }}>
-                    {copy('নিচের Secret Token টা copy করে ChatCat PaySync app-এ paste করুন।', 'Copy the Secret Token below and paste it into the ChatCat PaySync app.')}
+                    {copy('নিচের Secret Token টা copy করে FlamboyAI PaySync app-এ paste করুন।', 'Copy the Secret Token below and paste it into the FlamboyAI PaySync app.')}
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input readOnly value={smsToken} style={{ ...inp, flex: 1, fontSize: 11, color: th.muted, userSelect: 'all' as any, fontFamily: 'monospace' }} onFocus={e => e.target.select()} />
@@ -2179,8 +2264,8 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                   </div>
                   <div style={{ fontSize: 11, color: '#92400e', marginTop: 8, fontStyle: 'italic', lineHeight: 1.5 }}>
                     {copy(
-                      '💡 ChatCat SMS content দিয়ে match করে (bKash/Nagad/Rocket keyword + TxID + Amount)। তাই filter না দিলেও কাজ করবে, তবে filter দিলে unnecessary SMS forwarding হবে না।',
-                      '💡 ChatCat matches by SMS content (bKash/Nagad/Rocket keyword + TxID + Amount). It works without filters too, but filters prevent unnecessary SMS forwarding.',
+                      '💡 FlamboyAI SMS content দিয়ে match করে (bKash/Nagad/Rocket keyword + TxID + Amount)। তাই filter না দিলেও কাজ করবে, তবে filter দিলে unnecessary SMS forwarding হবে না।',
+                      '💡 FlamboyAI matches by SMS content (bKash/Nagad/Rocket keyword + TxID + Amount). It works without filters too, but filters prevent unnecessary SMS forwarding.',
                     )}
                   </div>
                 </div>
@@ -2230,19 +2315,19 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <Label text="Business সম্পর্কে বিস্তারিত তথ্য" hint="আপনার business-এর নাম, কী সেবা দেন, যোগাযোগ, ঠিকানা, সময়সূচি, FAQ — সব লিখুন। এই তথ্য থেকে AI customer-দের reply করবে।" />
 
-                {/* ChatCat service info smart-merge — admin only */}
+                {/* FlamboyAI service info smart-merge — admin only */}
                 {isAdmin && <><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button
                     style={{ ...th.btnPrimary, fontSize: 11.5, padding: '6px 12px' }}
                     onClick={() => {
                       // Each section has a unique marker so only changed parts get replaced
                       const sections: Record<string, string> = {
-                        'chatcat-intro': `আমরা Facebook Messenger automation সেবা দিই। আপনার page এর bot automatically order নেবে, reply করবে, courier booking করবে।`,
+                        'FlamboyAI-intro': `আমরা Facebook Messenger automation সেবা দিই। আপনার page এর bot automatically order নেবে, reply করবে, courier booking করবে।`,
                         'platform-fee': `## Platform Fee\nআলোচনা সাপেক্ষ — আপনার পেজের size ও ব্যবহার অনুযায়ী admin এর সাথে কথা বলে deal হবে।`,
-                        'ai-pricing': `## AI Usage Pricing (Pay-as-you-go)\n- AI text reply: ৳০.০৫/message\n- AI SmartBot: ৳০.০৮/message\n- Customer image (Vision AI): ৳০.২০/image\n- OCR scan: ৳০.০২–০.০৫\n- Voice note (STT): ৳১.০০/voice\n- Broadcast: ৳০.০৫/message\n- Subscriber notification: ৳০.১০/message\n- Memo print: ৳০.১০`,
+                        'ai-pricing': `## AI Usage Pricing (Pay-as-you-go, credit-based)\n- AI text/SmartBot reply: ১০+ credit/message (message length অনুযায়ী বাড়ে)\n- Customer image (Vision AI): ৮ credit/image\n- OCR scan: ১–২ credit\n- Voice note (STT): ৪০ credit/voice\n- Broadcast: ২ credit/message\n- Subscriber notification: ৪ credit/message\n- Memo print: ৪ credit\n- Recharge rate: ১ টাকা = ৪০ credit`,
                         'free-features': `## বিনামূল্যে\nCourier booking (Pathao, Steadfast, RedX, Paperfly), Accounting, CRM, Analytics, Order management`,
-                        'subscriber-feature': `## Special Feature: Subscriber Notification\nOrder complete/cancel হলে bot customer কে subscribe করতে বলে।\nSubscribed customer দের যেকোনো সময় নতুন পণ্যের message পাঠানো যায়।\nFacebook Ad ছাড়া — মাত্র ৳০.১০/message। ১০০০ জন = মাত্র ৳১০০।`,
-                        'payment-trial': `## Payment ও Trial\n- Payment: bKash, Nagad, Rocket, Bank transfer\n- ৭ দিন সম্পূর্ণ free trial — কোনো credit card লাগে না\n- Contact: WhatsApp — wa.me/8801720450797`,
+                        'subscriber-feature': `## Special Feature: Subscriber Notification\nOrder complete/cancel হলে bot customer কে subscribe করতে বলে।\nSubscribed customer দের যেকোনো সময় নতুন পণ্যের message পাঠানো যায়।\nFacebook Ad ছাড়া — মাত্র ৪ credit/message। ১০০০ জন = মাত্র ৪,০০০ credit (~৳১০০)।`,
+                        'payment-trial': `## Payment ও Trial\n- Payment: bKash, Nagad, Rocket, Bank transfer\n- ৭ দিন সম্পূর্ণ free trial — কোনো credit card লাগে না\n- Contact: WhatsApp — wa.me/8801575897887`,
                       };
 
                       let text = s.businessInfo;
@@ -2271,7 +2356,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                       if (changed) setS(p => ({ ...p, businessInfo: text.slice(0, 5000) }));
                     }}
                   >
-                    🔄 ChatCat Info Sync করুন
+                    🔄 FlamboyAI Info Sync করুন
                   </button>
                   <button
                     style={{ ...th.btnGhost, fontSize: 11.5, padding: '6px 12px', color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)' }}
@@ -2416,6 +2501,11 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
           </div>
         </Section>
 
+        {/* V29: Product card buttons — client-configurable buttons on Messenger product cards */}
+        <Section title={copy('🃏 Product Card Buttons', '🃏 Product Card Buttons')} desc={copy('Bot যে product card পাঠায় তাতে কোন কোন button থাকবে সেটা এখানে ঠিক করুন (সর্বোচ্চ ৩টা)।', 'Choose which buttons appear on the product cards the bot sends (up to 3).')}>
+          <CardButtonsEditor th={th} buttons={s.cardButtons} onChange={b => setS(p => ({ ...p, cardButtons: b }))} />
+        </Section>
+
         <SaveRow onClick={() => save({
           imageRecognitionOn: s.imageRecognitionOn,
           imageHighConfidence: s.imageHighConfidence,
@@ -2424,6 +2514,9 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
           textFallbackAiOn: s.textFallbackAiOn,
           businessBotOn: s.businessBotOn,
           businessInfo: s.businessInfo,
+          cardButtons: s.cardButtons.filter(b =>
+            b.label.trim() && (b.type !== 'custom' || (b.url ?? '').trim() || (b.replyText ?? '').trim())
+          ),
         })} saving={saving}/>
       </div>
     </div>
@@ -2447,14 +2540,14 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
               </span>
             </div>
 
-            {/* ChatCat Pricing Info Panel — admin only */}
+            {/* FlamboyAI Pricing Info Panel — admin only */}
             {isAdmin && <div style={{ marginBottom: 10, padding: '12px 14px', borderRadius: 10, background: 'rgba(79,110,247,0.07)', border: `1px solid rgba(79,110,247,0.2)` }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: th.accent, marginBottom: 8 }}>📋 ChatCat Service Info — Bot কে শেখান</div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: th.accent, marginBottom: 8 }}>📋 FlamboyAI Service Info — Bot কে শেখান</div>
               <div style={{ fontSize: 11.5, color: th.muted, marginBottom: 10, lineHeight: 1.6 }}>
-                নিচের বাটনে click করলে ChatCat এর সব নতুন pricing ও service info automatically আপনার knowledge box এ add হবে। তারপর নিজের product info যোগ করুন।
+                নিচের বাটনে click করলে FlamboyAI এর সব নতুন pricing ও service info automatically আপনার knowledge box এ add হবে। তারপর নিজের product info যোগ করুন।
               </div>
               <div style={{ background: th.surface, borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: th.muted, lineHeight: 1.8, border: `1px solid ${th.border}`, marginBottom: 10, maxHeight: 160, overflowY: 'auto' }}>
-                <strong style={{ color: th.text }}>ChatCat — যা bot জানবে:</strong><br/>
+                <strong style={{ color: th.text }}>FlamboyAI — যা bot জানবে:</strong><br/>
                 ✦ Platform fee: আলোচনা সাপেক্ষ (admin এর সাথে কথা বলে deal)<br/>
                 ✦ AI reply: ৳০.০৫/msg | SmartBot: ৳০.০৮/msg<br/>
                 ✦ Customer image (Vision AI): ৳০.২০ | OCR: ৳০.০২–০.০৫<br/>
@@ -2470,7 +2563,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                 style={{ ...th.btnPrimary, fontSize: 12, padding: '7px 14px' }}
                 onClick={() => {
                   const sections: Record<string, string> = {
-                    'cc-pricing': `## ChatCat AI Pricing (Wallet)\n- AI text reply: ৳০.০৫/msg\n- AI SmartBot: ৳০.০৮/msg\n- Customer image (Vision AI): ৳০.২০/image\n- OCR: ৳০.০২–০.০৫/scan\n- Voice note (STT): ৳১.০০/voice\n- Product analyze: ৳০.২০\n- Broadcast: ৳০.০৫/msg\n- Subscriber notification: ৳০.১০/msg\n- Comment reply: ৳০.০৫\n- Memo print: ৳০.১০`,
+                    'cc-pricing': `## FlamboyAI AI Pricing (Wallet)\n- AI text reply: ৳০.০৫/msg\n- AI SmartBot: ৳০.০৮/msg\n- Customer image (Vision AI): ৳০.২০/image\n- OCR: ৳০.০২–০.০৫/scan\n- Voice note (STT): ৳১.০০/voice\n- Product analyze: ৳০.২০\n- Broadcast: ৳০.০৫/msg\n- Subscriber notification: ৳০.১০/msg\n- Comment reply: ৳০.০৫\n- Memo print: ৳০.১০`,
                     'cc-free': `## বিনামূল্যে\nCourier (Pathao/Steadfast/RedX/Paperfly), Order management, Accounting, CRM, Analytics, Product catalog`,
                     'cc-example': `## Real Example\n১ image + ৫ AI reply = ৳০.২০ + (৫×৳০.০৮) = মাত্র ৳০.৬০`,
                     'cc-subscriber': `## Subscriber Notification\nOrder পরে subscribe করা customer দের যেকোনো সময় নতুন পণ্যের message — ৳০.১০/msg। Facebook Ad ছাড়া।`,
@@ -2498,7 +2591,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
                   if (changed) setS(p => ({ ...p, knowledgeText: text.slice(0, 3000) }));
                 }}
               >
-                🔄 ChatCat Info Sync করুন
+                🔄 FlamboyAI Info Sync করুন
               </button>
             </div>}
 

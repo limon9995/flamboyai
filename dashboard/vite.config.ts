@@ -5,7 +5,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
   // In production build, VITE_API_BASE should be the full API URL.
-  // e.g. https://api.chatcat.pro
+  // e.g. https://api.flamboyai.com
   // In dev, we fall back to the proxy path so /api routes to localhost:3000.
   const apiBase = env.VITE_API_BASE || ''
 

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseIntPipe,
@@ -21,6 +22,7 @@ import { AdminService } from './admin.service';
 import { GlobalSettingsService } from '../common/global-settings.service';
 import { ApiKeysService } from '../common/api-keys.service';
 import { GeminiKeyRotatorService } from '../common/gemini-key-rotator.service';
+import { AuthService } from '../auth/auth.service';
 
 @SkipThrottle({ global: true, auth: true })
 @Controller('admin')
@@ -32,6 +34,7 @@ export class AdminController {
     private readonly globalSettings: GlobalSettingsService,
     private readonly apiKeys: ApiKeysService,
     private readonly geminiRotator: GeminiKeyRotatorService,
+    private readonly authService: AuthService,
   ) {}
 
   @Get('api-keys')
@@ -107,14 +110,23 @@ export class AdminController {
   @Get('health') health() {
     return this.svc.health();
   }
-  @Get('pages/:pageId/settings') getPageSettings(@Param('pageId') p: string) {
-    return this.svc.getPageSettings(this.parsePageId(p));
+  @Get('pages/:pageId/settings')
+  @Roles('admin', 'agent')
+  getPageSettings(@Param('pageId') p: string, @Req() req: any) {
+    const pageId = this.parsePageId(p);
+    this.authService.ensurePageAccess(req.user || req.authUser, pageId);
+    return this.svc.getPageSettings(pageId);
   }
-  @Patch('pages/:pageId/settings') updatePageSettings(
+  @Patch('pages/:pageId/settings')
+  @Roles('admin', 'agent')
+  updatePageSettings(
     @Param('pageId') p: string,
     @Body() b: any,
+    @Req() req: any,
   ) {
-    return this.svc.updatePageSettings(this.parsePageId(p), b || {});
+    const pageId = this.parsePageId(p);
+    this.authService.ensurePageAccess(req.user || req.authUser, pageId);
+    return this.svc.updatePageSettings(pageId, b || {});
   }
 
   @Get('pages/:pageId/app-credentials')
@@ -168,23 +180,35 @@ export class AdminController {
 
   // ── Per-client page knowledge ─────────────────────────────────────────────
   @Get('bot-knowledge/page/:pageId')
-  getClientKnowledge(@Param('pageId') p: string) {
-    return this.svc.getClientBotKnowledge(this.parsePageId(p));
+  @Roles('admin', 'agent')
+  getClientKnowledge(@Param('pageId') p: string, @Req() req: any) {
+    const pageId = this.parsePageId(p);
+    this.authService.ensurePageAccess(req.user || req.authUser, pageId);
+    return this.svc.getClientBotKnowledge(pageId);
   }
 
   @Patch('bot-knowledge/page/:pageId/questions')
-  setClientQuestions(@Param('pageId') p: string, @Body('questions') q: any[]) {
-    return this.svc.setClientPageQuestions(this.parsePageId(p), q || []);
+  @Roles('admin', 'agent')
+  setClientQuestions(@Param('pageId') p: string, @Body('questions') q: any[], @Req() req: any) {
+    const pageId = this.parsePageId(p);
+    this.authService.ensurePageAccess(req.user || req.authUser, pageId);
+    return this.svc.setClientPageQuestions(pageId, q || []);
   }
 
   @Patch('bot-knowledge/page/:pageId/system-replies')
-  setClientReplies(@Param('pageId') p: string, @Body('systemReplies') s: any) {
-    return this.svc.setClientPageSystemReplies(this.parsePageId(p), s || {});
+  @Roles('admin', 'agent')
+  setClientReplies(@Param('pageId') p: string, @Body('systemReplies') s: any, @Req() req: any) {
+    const pageId = this.parsePageId(p);
+    this.authService.ensurePageAccess(req.user || req.authUser, pageId);
+    return this.svc.setClientPageSystemReplies(pageId, s || {});
   }
 
   @Post('bot-knowledge/page/:pageId/push-global/:key')
-  pushGlobalToPage(@Param('pageId') p: string, @Param('key') key: string) {
-    return this.svc.pushGlobalQuestionToPage(this.parsePageId(p), key);
+  @Roles('admin', 'agent')
+  pushGlobalToPage(@Param('pageId') p: string, @Param('key') key: string, @Req() req: any) {
+    const pageId = this.parsePageId(p);
+    this.authService.ensurePageAccess(req.user || req.authUser, pageId);
+    return this.svc.pushGlobalQuestionToPage(pageId, key);
   }
 
   // ── V10: Courier tutorial videos (backward-compat) ───────────────────────
@@ -307,19 +331,19 @@ export class AdminController {
   saveDefaultPricing(@Body() b: any) {
     const n = (v: any) => (v !== undefined ? Number(v) : undefined);
     return this.svc.saveDefaultPricing({
-      costPerTextMsgBdt: n(b?.costPerTextMsgBdt),
-      costPerVoiceMsgBdt: n(b?.costPerVoiceMsgBdt),
-      costPerImageBdt: n(b?.costPerImageBdt),
-      costPerImageLocalBdt: n(b?.costPerImageLocalBdt),
-      costPerAnalyzeBdt: n(b?.costPerAnalyzeBdt),
-      costPerOcrLocalBdt: n(b?.costPerOcrLocalBdt),
-      costPerOcrAiBdt: n(b?.costPerOcrAiBdt),
-      costPerRecurringNotifBdt: n(b?.costPerRecurringNotifBdt),
-      costPerBroadcastMsgBdt: n(b?.costPerBroadcastMsgBdt),
-      costPerKeywordReplyBdt: n(b?.costPerKeywordReplyBdt),
-      costPerAiGenerateBdt: n(b?.costPerAiGenerateBdt),
-      costPerMemoPrintBdt: n(b?.costPerMemoPrintBdt),
-      costPerCommentReplyBdt: n(b?.costPerCommentReplyBdt),
+      costPerVoiceMsgCredit: n(b?.costPerVoiceMsgCredit),
+      costPerImageCredit: n(b?.costPerImageCredit),
+      costPerImageLocalCredit: n(b?.costPerImageLocalCredit),
+      costPerAnalyzeCredit: n(b?.costPerAnalyzeCredit),
+      costPerOcrLocalCredit: n(b?.costPerOcrLocalCredit),
+      costPerOcrAiCredit: n(b?.costPerOcrAiCredit),
+      costPerRecurringNotifCredit: n(b?.costPerRecurringNotifCredit),
+      costPerBroadcastMsgCredit: n(b?.costPerBroadcastMsgCredit),
+      costPerKeywordReplyCredit: n(b?.costPerKeywordReplyCredit),
+      costPerAiGenerateCredit: n(b?.costPerAiGenerateCredit),
+      costPerMemoPrintCredit: n(b?.costPerMemoPrintCredit),
+      costPerCommentReplyCredit: n(b?.costPerCommentReplyCredit),
+      creditsPerBdt: n(b?.creditsPerBdt),
     });
   }
 
@@ -327,24 +351,61 @@ export class AdminController {
   applyPricingToAll(@Body() b: any) {
     const n = (v: any) => (v !== undefined ? Number(v) : undefined);
     return this.svc.applyPricingToAll({
-      costPerTextMsgBdt: n(b?.costPerTextMsgBdt),
-      costPerVoiceMsgBdt: n(b?.costPerVoiceMsgBdt),
-      costPerImageBdt: n(b?.costPerImageBdt),
-      costPerImageLocalBdt: n(b?.costPerImageLocalBdt),
-      costPerAnalyzeBdt: n(b?.costPerAnalyzeBdt),
-      costPerOcrLocalBdt: n(b?.costPerOcrLocalBdt),
-      costPerOcrAiBdt: n(b?.costPerOcrAiBdt),
-      costPerRecurringNotifBdt: n(b?.costPerRecurringNotifBdt),
-      costPerBroadcastMsgBdt: n(b?.costPerBroadcastMsgBdt),
-      costPerKeywordReplyBdt: n(b?.costPerKeywordReplyBdt),
-      costPerAiGenerateBdt: n(b?.costPerAiGenerateBdt),
-      costPerMemoPrintBdt: n(b?.costPerMemoPrintBdt),
-      costPerCommentReplyBdt: n(b?.costPerCommentReplyBdt),
+      costPerVoiceMsgCredit: n(b?.costPerVoiceMsgCredit),
+      costPerImageCredit: n(b?.costPerImageCredit),
+      costPerImageLocalCredit: n(b?.costPerImageLocalCredit),
+      costPerAnalyzeCredit: n(b?.costPerAnalyzeCredit),
+      costPerOcrLocalCredit: n(b?.costPerOcrLocalCredit),
+      costPerOcrAiCredit: n(b?.costPerOcrAiCredit),
+      costPerRecurringNotifCredit: n(b?.costPerRecurringNotifCredit),
+      costPerBroadcastMsgCredit: n(b?.costPerBroadcastMsgCredit),
+      costPerKeywordReplyCredit: n(b?.costPerKeywordReplyCredit),
+      costPerAiGenerateCredit: n(b?.costPerAiGenerateCredit),
+      costPerMemoPrintCredit: n(b?.costPerMemoPrintCredit),
+      costPerCommentReplyCredit: n(b?.costPerCommentReplyCredit),
     });
   }
 
+  @Get('wallet/packages')
+  listCreditPackages() {
+    return this.svc.listCreditPackages(true);
+  }
+
+  @Post('wallet/packages')
+  createCreditPackage(@Body() b: any) {
+    return this.svc.createCreditPackage({
+      name: b?.name,
+      priceBdt: Number(b?.priceBdt),
+      credits: Number(b?.credits),
+      sortOrder: b?.sortOrder !== undefined ? Number(b.sortOrder) : undefined,
+    });
+  }
+
+  @Patch('wallet/packages/:id')
+  updateCreditPackage(@Param('id', ParseIntPipe) id: number, @Body() b: any) {
+    const data: any = {};
+    if (b?.name !== undefined) data.name = b.name;
+    if (b?.priceBdt !== undefined) data.priceBdt = Number(b.priceBdt);
+    if (b?.credits !== undefined) data.credits = Number(b.credits);
+    if (b?.isActive !== undefined) data.isActive = Boolean(b.isActive);
+    if (b?.sortOrder !== undefined) data.sortOrder = Number(b.sortOrder);
+    return this.svc.updateCreditPackage(id, data);
+  }
+
+  @Delete('wallet/packages/:id')
+  deleteCreditPackage(@Param('id', ParseIntPipe) id: number) {
+    return this.svc.deleteCreditPackage(id);
+  }
+
+  @Post('wallet/packages/reorder')
+  reorderCreditPackages(@Body() b: any) {
+    return this.svc.reorderCreditPackages((b?.orderedIds ?? []).map(Number));
+  }
+
   @Get('wallet/:pageId')
-  getPageWallet(@Param('pageId', ParseIntPipe) pageId: number) {
+  @Roles('admin', 'agent')
+  getPageWallet(@Param('pageId', ParseIntPipe) pageId: number, @Req() req: any) {
+    this.authService.ensurePageAccess(req.user || req.authUser, pageId);
     return this.svc.getPageWallet(pageId);
   }
 
@@ -353,9 +414,9 @@ export class AdminController {
     @Param('pageId', ParseIntPipe) pageId: number,
     @Body() b: any,
   ) {
-    const amount = Number(b?.amountBdt);
+    const amount = Number(b?.creditAmount);
     if (!amount || amount <= 0)
-      throw new BadRequestException('amountBdt must be positive');
+      throw new BadRequestException('creditAmount must be positive');
     return this.svc.rechargePageWallet(
       pageId,
       amount,
@@ -369,8 +430,8 @@ export class AdminController {
     @Param('pageId', ParseIntPipe) pageId: number,
     @Body() b: any,
   ) {
-    const amount = Number(b?.amountBdt);
-    if (!amount) throw new BadRequestException('amountBdt must be non-zero');
+    const amount = Number(b?.creditAmount);
+    if (!amount) throw new BadRequestException('creditAmount must be non-zero');
     return this.svc.adjustPageWallet(pageId, amount, b?.note);
   }
 
@@ -378,19 +439,18 @@ export class AdminController {
   updatePricing(@Param('pageId', ParseIntPipe) pageId: number, @Body() b: any) {
     const n = (v: any) => (v !== undefined ? Number(v) : undefined);
     return this.svc.updatePagePricing(pageId, {
-      costPerTextMsgBdt: n(b?.costPerTextMsgBdt),
-      costPerVoiceMsgBdt: n(b?.costPerVoiceMsgBdt),
-      costPerImageBdt: n(b?.costPerImageBdt),
-      costPerImageLocalBdt: n(b?.costPerImageLocalBdt),
-      costPerAnalyzeBdt: n(b?.costPerAnalyzeBdt),
-      costPerOcrLocalBdt: n(b?.costPerOcrLocalBdt),
-      costPerOcrAiBdt: n(b?.costPerOcrAiBdt),
-      costPerRecurringNotifBdt: n(b?.costPerRecurringNotifBdt),
-      costPerBroadcastMsgBdt: n(b?.costPerBroadcastMsgBdt),
-      costPerKeywordReplyBdt: n(b?.costPerKeywordReplyBdt),
-      costPerAiGenerateBdt: n(b?.costPerAiGenerateBdt),
-      costPerMemoPrintBdt: n(b?.costPerMemoPrintBdt),
-      costPerCommentReplyBdt: n(b?.costPerCommentReplyBdt),
+      costPerVoiceMsgCredit: n(b?.costPerVoiceMsgCredit),
+      costPerImageCredit: n(b?.costPerImageCredit),
+      costPerImageLocalCredit: n(b?.costPerImageLocalCredit),
+      costPerAnalyzeCredit: n(b?.costPerAnalyzeCredit),
+      costPerOcrLocalCredit: n(b?.costPerOcrLocalCredit),
+      costPerOcrAiCredit: n(b?.costPerOcrAiCredit),
+      costPerRecurringNotifCredit: n(b?.costPerRecurringNotifCredit),
+      costPerBroadcastMsgCredit: n(b?.costPerBroadcastMsgCredit),
+      costPerKeywordReplyCredit: n(b?.costPerKeywordReplyCredit),
+      costPerAiGenerateCredit: n(b?.costPerAiGenerateCredit),
+      costPerMemoPrintCredit: n(b?.costPerMemoPrintCredit),
+      costPerCommentReplyCredit: n(b?.costPerCommentReplyCredit),
     });
   }
 
@@ -541,5 +601,46 @@ export class AdminController {
   @Get('reports/revenue')
   getRevenueReport(@Query('month') month?: string) {
     return this.svc.getRevenueReport(month);
+  }
+
+  // ── Agents (resellers) ──────────────────────────────────────────────────────
+  @Get('agents')
+  listAgents() {
+    return this.svc.listAgents();
+  }
+
+  @Post('agents')
+  createAgent(@Body() b: any) {
+    return this.svc.createAgent({
+      username: b?.username,
+      password: b?.password,
+      name: b?.name,
+      commissionPercentRecharge:
+        b?.commissionPercentRecharge !== undefined ? Number(b.commissionPercentRecharge) : undefined,
+      commissionPercentSubscription:
+        b?.commissionPercentSubscription !== undefined ? Number(b.commissionPercentSubscription) : undefined,
+    });
+  }
+
+  @Patch('agents/:id')
+  updateAgent(@Param('id') id: string, @Body() b: any) {
+    const data: any = {};
+    if (b?.name !== undefined) data.name = String(b.name);
+    if (b?.commissionPercentRecharge !== undefined)
+      data.commissionPercentRecharge = Number(b.commissionPercentRecharge);
+    if (b?.commissionPercentSubscription !== undefined)
+      data.commissionPercentSubscription = Number(b.commissionPercentSubscription);
+    return this.svc.updateAgent(id, data);
+  }
+
+  @Post('agents/:id/payout')
+  recordAgentPayout(@Param('id') id: string, @Body() b: any, @Req() req: any) {
+    const adminUsername = (req.user || req.authUser)?.username || 'admin';
+    return this.svc.recordAgentPayout(id, Number(b?.amountBdt), b?.note, adminUsername);
+  }
+
+  @Get('agents/:id/earnings')
+  getAgentEarnings(@Param('id') id: string) {
+    return this.svc.getAgentEarningsLedger(id);
   }
 }

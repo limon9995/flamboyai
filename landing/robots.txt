@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://chatcat.pro/sitemap.xml
+Sitemap: https://flamboyai.com/sitemap.xml

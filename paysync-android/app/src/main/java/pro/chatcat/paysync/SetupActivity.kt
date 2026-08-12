@@ -1,4 +1,4 @@
-package pro.chatcat.paysync
+package pro.FlamboyAI.paysync
 
 import android.Manifest
 import android.app.role.RoleManager
@@ -95,7 +95,7 @@ class SetupActivity : AppCompatActivity() {
             key = StepKey.NOTIFICATION_ACCESS,
             icon = "🔔",
             title = "Notification Access চালু করুন",
-            desc = "তালিকায় ChatCat PaySync খুঁজে Toggle ON করুন।",
+            desc = "তালিকায় FlamboyAI PaySync খুঁজে Toggle ON করুন।",
             why = "💡 bKash / Nagad / Rocket এর payment notification পড়ে auto-verify করার জন্য এই permission লাগবে।",
             btnLabel = "Notification Access Settings খুলুন"
         ))
@@ -118,7 +118,7 @@ class SetupActivity : AppCompatActivity() {
                 key = StepKey.DEFAULT_SMS,
                 icon = "📲",
                 title = "Default SMS App সেট করুন",
-                desc = "ChatCat PaySync কে Default SMS App করলে notification ছাড়াই SMS সরাসরি পড়া যাবে — আরও reliable।",
+                desc = "FlamboyAI PaySync কে Default SMS App করলে notification ছাড়াই SMS সরাসরি পড়া যাবে — আরও reliable।",
                 why = "💡 পরে আবার আগের SMS app Default করতে পারবেন।",
                 btnLabel = "Default SMS App সেট করুন"
             ))
@@ -156,11 +156,11 @@ class SetupActivity : AppCompatActivity() {
 
     private fun detectAutostartBrand(brand: String): AutostartBrand? = when {
         brand.contains("xiaomi") || brand.contains("redmi") || brand.contains("poco") -> AutostartBrand(
-            "📱 Xiaomi/Redmi/POCO:\nSecurity app → Manage apps → ChatCat PaySync → Autostart → চালু করুন",
+            "📱 Xiaomi/Redmi/POCO:\nSecurity app → Manage apps → FlamboyAI PaySync → Autostart → চালু করুন",
             { tryIntent("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity") }
         )
         brand.contains("huawei") || brand.contains("honor") -> AutostartBrand(
-            "📱 Huawei/Honor:\nSettings → Apps → ChatCat PaySync → Battery → App launch → Manage manually → Auto-launch ON",
+            "📱 Huawei/Honor:\nSettings → Apps → FlamboyAI PaySync → Battery → App launch → Manage manually → Auto-launch ON",
             { tryIntent("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity") }
         )
         brand.contains("samsung") -> AutostartBrand(
@@ -168,19 +168,19 @@ class SetupActivity : AppCompatActivity() {
             { tryIntent("com.samsung.android.lool", "com.samsung.android.sm.ui.battery.BatteryActivity") }
         )
         brand.contains("oppo") || brand.contains("realme") -> AutostartBrand(
-            "📱 OPPO/Realme:\nSafe Center → Startup Manager → ChatCat PaySync চালু করুন",
+            "📱 OPPO/Realme:\nSafe Center → Startup Manager → FlamboyAI PaySync চালু করুন",
             { tryIntent("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity") }
         )
         brand.contains("vivo") -> AutostartBrand(
-            "📱 Vivo:\niManager → App Manager → Autostart → ChatCat PaySync চালু করুন",
+            "📱 Vivo:\niManager → App Manager → Autostart → FlamboyAI PaySync চালু করুন",
             { tryIntent("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity") }
         )
         brand.contains("oneplus") -> AutostartBrand(
-            "📱 OnePlus:\nSettings → Battery → Battery Optimization → ChatCat PaySync → Don't optimize",
+            "📱 OnePlus:\nSettings → Battery → Battery Optimization → FlamboyAI PaySync → Don't optimize",
             { tryIntent("com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity") }
         )
         brand.contains("asus") -> AutostartBrand(
-            "📱 Asus:\nMobile Manager → Autostart → ChatCat PaySync চালু করুন",
+            "📱 Asus:\nMobile Manager → Autostart → FlamboyAI PaySync চালু করুন",
             { tryIntent("com.asus.mobilemanager", "com.asus.mobilemanager.autostart.AutoStartActivity") }
         )
         // Unknown brand — skip this step entirely

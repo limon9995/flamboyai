@@ -44,6 +44,25 @@ export default function LocationPickerMap({
   onChangeRef.current = onChange;
   const [gpsBusy, setGpsBusy] = useState(false);
   const [gpsError, setGpsError] = useState('');
+  // Any user-driven pin change (GPS, click, drag) asks for an explicit
+  // confirm before treating the spot as settled — GPS in particular can be
+  // off by a lot, so we show the pin and wait for a "yes this is right"
+  // rather than silently trusting it.
+  const [confirmPending, setConfirmPending] = useState(false);
+  const [justConfirmed, setJustConfirmed] = useState(false);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const markPending = () => {
+    setJustConfirmed(false);
+    setConfirmPending(true);
+  };
+  const confirmLocation = () => {
+    setConfirmPending(false);
+    setJustConfirmed(true);
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = setTimeout(() => setJustConfirmed(false), 5000);
+  };
+  useEffect(() => () => { if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current); }, []);
 
   const placeMarker = (map: L.Map, la: number, ln: number) => {
     if (!markerRef.current) {
@@ -54,6 +73,7 @@ export default function LocationPickerMap({
       markerRef.current.on('dragend', () => {
         const ll = markerRef.current!.getLatLng();
         onChangeRef.current(ll.lat, ll.lng);
+        markPending();
       });
     } else {
       markerRef.current.setLatLng([la, ln]);
@@ -83,6 +103,7 @@ export default function LocationPickerMap({
     map.on('click', (e: L.LeafletMouseEvent) => {
       placeMarker(map, e.latlng.lat, e.latlng.lng);
       onChangeRef.current(e.latlng.lat, e.latlng.lng);
+      markPending();
     });
     if (lat != null && lng != null) placeMarker(map, lat, lng);
     mapRef.current = map;
@@ -154,6 +175,7 @@ export default function LocationPickerMap({
         mapRef.current?.setView([latitude, longitude], 16);
         if (mapRef.current) placeMarker(mapRef.current, latitude, longitude);
         onChangeRef.current(latitude, longitude);
+        markPending();
       },
       () => {
         if (done) return;
@@ -200,6 +222,33 @@ export default function LocationPickerMap({
       </button>
       {gpsError && (
         <div style={{ marginTop: 6, fontSize: 12.5, color: '#dc2626' }}>{gpsError}</div>
+      )}
+      {confirmPending && (
+        <div style={{
+          marginTop: 8, padding: '9px 12px', borderRadius: 10,
+          background: 'rgba(217,119,6,.1)', border: '1px solid #d97706',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap',
+        }}>
+          <span style={{ fontSize: 12.5, color: '#b45309', fontWeight: 600 }}>
+            📍 ম্যাপে pin-টা কি ঠিক জায়গায় আছে? ভুল হলে ম্যাপে ক্লিক করে বা পিন ড্র্যাগ করে ঠিক করুন।
+          </span>
+          <button
+            type="button"
+            onClick={confirmLocation}
+            style={{
+              padding: '6px 12px', borderRadius: 8, border: 'none',
+              background: '#d97706', color: '#fff', fontSize: 12.5, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+            }}
+          >
+            ✅ হ্যাঁ, ঠিক আছে
+          </button>
+        </div>
+      )}
+      {justConfirmed && !confirmPending && (
+        <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 10, background: 'rgba(5,150,105,.1)', border: '1px solid #059669', fontSize: 12.5, color: '#059669', fontWeight: 700 }}>
+          ✅ লোকেশন যোগ করা হয়েছে — এবার নিচের Save বাটনে চাপ দিয়ে সেভ করুন। পরে চাইলে আবার পিন সরিয়ে বদলাতে পারবেন।
+        </div>
       )}
     </div>
   );

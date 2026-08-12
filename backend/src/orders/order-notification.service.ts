@@ -37,10 +37,13 @@ export class OrderNotificationService {
       .join('\n');
     const subtotal = order.items.reduce((s: number, i: any) => s + i.unitPrice * i.qty, 0);
     const advance = (order as any).advanceAmount ?? 0;
-    const discounts = (order.loyaltyDiscountAmount || 0) + (order.happyHourDiscountAmount || 0);
+    const discounts =
+      (order.loyaltyDiscountAmount || 0) +
+      (order.happyHourDiscountAmount || 0) +
+      (order.milestoneDiscountAmount || 0);
     const dueAmount = Math.max(0, subtotal - advance - discounts);
     const editLink = (order as any).editToken
-      ? `https://chatcat.pro/order?token=${(order as any).editToken}`
+      ? `https://flamboyai.com/order?token=${(order as any).editToken}`
       : null;
 
     let rewardLine = '';
@@ -51,7 +54,9 @@ export class OrderNotificationService {
         const lines = rewards.map((r) =>
           r.rewardType === 'FREE_DELIVERY'
             ? '🎁 অভিনন্দন! এই অর্ডারে আপনি ফ্রি ডেলিভারি পেয়েছেন।'
-            : `🎁 অভিনন্দন! এই অর্ডারে আপনি ফ্রি ${r.productName || ''} পেয়েছেন।`,
+            : r.rewardType === 'DISCOUNT'
+              ? `🎁 অভিনন্দন! এই অর্ডারে আপনি ${r.discountPercent}% ছাড় পেয়েছেন।`
+              : `🎁 অভিনন্দন! এই অর্ডারে আপনি ফ্রি ${r.productName || ''} পেয়েছেন।`,
         );
         if (lines.length) rewardLine = '\n\n' + lines.join('\n');
       } catch {
@@ -103,7 +108,7 @@ export class OrderNotificationService {
       if (!order || !order.customerPsid || order.pageIdRef !== pageId) return;
       const settings = await this.followUp.getSettings(pageId);
       if (!settings.reviewRequestEnabled) return;
-      const reviewLink = `https://chatcat.pro/review?token=${order.editToken}`;
+      const reviewLink = `https://flamboyai.com/review?token=${order.editToken}`;
       await this.followUp.schedule(pageId, {
         psid: order.customerPsid,
         orderId,

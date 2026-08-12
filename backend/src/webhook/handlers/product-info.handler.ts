@@ -5,11 +5,12 @@ import { BotKnowledgeService } from '../../bot-knowledge/bot-knowledge.service';
 import { BotIntentService } from '../../bot/bot-intent.service';
 import { ConversationContextService } from '../../conversation-context/conversation-context.service';
 import { ProductsService } from '../../products/products.service';
+import { buildProductCardButtons } from '../../common/product-card-buttons';
 
 function getFullImageUrl(url?: string | null): string | undefined {
   if (!url) return undefined;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  const base = process.env.API_BASE_URL || 'https://api.chatcat.pro';
+  const base = process.env.API_BASE_URL || 'https://api.flamboyai.com';
   return `${base.replace(/\/$/, '')}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
@@ -65,7 +66,7 @@ export class ProductInfoHandler {
     const [withRefs] = await this.products.attachReferenceImagesList(page.id, [product]);
     const imageUrl = getFullImageUrl(product.imageUrl) || getFullImageUrl(firstReferenceImage(withRefs?.referenceImagesJson));
     const catalogBase = (page.catalogBaseUrl || '').replace(/\/$/, '') ||
-      `https://api.chatcat.pro/catalog/${page.id}`;
+      `https://api.flamboyai.com/catalog/${page.id}`;
     const productUrl = `${catalogBase}/product/${product.code}`;
     const sym = page.currencySymbol || '৳';
 
@@ -74,13 +75,13 @@ export class ProductInfoHandler {
         title: product.name || product.code,
         image_url: imageUrl,
         subtitle: `${sym}${Number(product.price).toLocaleString()} · Code: ${product.code}`,
-        buttons: [
+        buttons: buildProductCardButtons(page, { code: product.code, productUrl }, [
           {
             type: 'web_url' as const,
             url: productUrl,
             title: '🛍 Details দেখুন',
           },
-        ],
+        ]),
       },
     ]);
 
@@ -123,18 +124,18 @@ export class ProductInfoHandler {
     const productsWithRefs = await this.products.attachReferenceImagesList(page.id, products);
     const elements = productsWithRefs.map((p: any) => {
       const imageUrl = getFullImageUrl(p.imageUrl) || getFullImageUrl(firstReferenceImage(p.referenceImagesJson));
-      const productUrl = `https://api.chatcat.pro/catalog/${page.id}/product/${p.code}`;
+      const productUrl = `https://api.flamboyai.com/catalog/${page.id}/product/${p.code}`;
       return {
         title: p.name || p.code,
         image_url: imageUrl,
         subtitle: `${sym}${Number(p.price).toLocaleString()} · Code: ${p.code}${p.stockQty <= 0 ? ' (Stock Out)' : ''}`,
-        buttons: [
+        buttons: buildProductCardButtons(page, { code: p.code, productUrl }, [
           {
             type: 'web_url' as const,
             url: productUrl,
             title: 'View product',
           },
-        ],
+        ]),
       };
     });
 
@@ -175,7 +176,7 @@ export class ProductInfoHandler {
 
     const sym = page.currencySymbol || '৳';
     const catalogBase = (page.catalogBaseUrl || '').replace(/\/$/, '') ||
-      `https://api.chatcat.pro/catalog/${page.id}`;
+      `https://api.flamboyai.com/catalog/${page.id}`;
 
     await this.messenger.sendText(page.pageToken, psid, introText);
 
@@ -188,7 +189,7 @@ export class ProductInfoHandler {
         title: p.name || p.code,
         image_url: imageUrl,
         subtitle: `${sym}${Number(p.price).toLocaleString()}${p.stockQty <= 0 ? ' · স্টক নেই' : ''}`,
-        buttons: [
+        buttons: buildProductCardButtons(page, { code: p.code, productUrl }, [
           {
             type: 'postback' as const,
             title: '✅ এটা নিব',
@@ -199,7 +200,7 @@ export class ProductInfoHandler {
             url: productUrl,
             title: '🔗 Details',
           },
-        ],
+        ]),
       };
     });
 

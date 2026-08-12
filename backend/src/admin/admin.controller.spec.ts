@@ -26,6 +26,11 @@ describe('AdminController', () => {
     saveTutorials: jest.fn(),
   };
 
+  const auth = {
+    ensurePageAccess: jest.fn(),
+  };
+  const adminReq = { user: { id: 'admin-1', role: 'admin' } };
+
   let controller: AdminController;
 
   beforeEach(() => {
@@ -35,36 +40,37 @@ describe('AdminController', () => {
       {} as any,
       {} as any,
       {} as any,
+      auth as any,
     );
   });
 
   it('rejects invalid page ids for settings routes', () => {
-    expect(() => controller.getPageSettings('abc')).toThrow(
+    expect(() => controller.getPageSettings('abc', adminReq)).toThrow(
       BadRequestException,
     );
-    expect(() => controller.updatePageSettings('0', {})).toThrow(
+    expect(() => controller.updatePageSettings('0', {}, adminReq)).toThrow(
       BadRequestException,
     );
   });
 
   it('rejects invalid page ids for bot knowledge routes', () => {
-    expect(() => controller.getClientKnowledge('-1')).toThrow(
+    expect(() => controller.getClientKnowledge('-1', adminReq)).toThrow(
       BadRequestException,
     );
-    expect(() => controller.setClientQuestions('NaN', [])).toThrow(
+    expect(() => controller.setClientQuestions('NaN', [], adminReq)).toThrow(
       BadRequestException,
     );
-    expect(() => controller.setClientReplies('1.2', {})).toThrow(
+    expect(() => controller.setClientReplies('1.2', {}, adminReq)).toThrow(
       BadRequestException,
     );
-    expect(() => controller.pushGlobalToPage('', 'welcome')).toThrow(
+    expect(() => controller.pushGlobalToPage('', 'welcome', adminReq)).toThrow(
       BadRequestException,
     );
   });
 
   it('passes parsed numeric ids to service for valid page routes', () => {
-    controller.getPageSettings('12');
-    controller.pushGlobalToPage('7', 'welcome');
+    controller.getPageSettings('12', adminReq);
+    controller.pushGlobalToPage('7', 'welcome', adminReq);
 
     expect(svc.getPageSettings).toHaveBeenCalledWith(12);
     expect(svc.pushGlobalQuestionToPage).toHaveBeenCalledWith(7, 'welcome');

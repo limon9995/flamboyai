@@ -279,7 +279,7 @@ export class TelegramNotificationService {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: '✅ Chatcat Telegram notification test successful!',
+            text: '✅ FlamboyAI Telegram notification test successful!',
           }),
           signal: AbortSignal.timeout(10_000),
         },

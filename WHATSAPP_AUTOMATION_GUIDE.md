@@ -12,13 +12,13 @@
 ## Part A — একবারের জন্য (আগেই না করা থাকলে করুন)
 
 1. **business.facebook.com**-এ গিয়ে login করুন — যে Facebook profile দিয়ে Page automation-এর জন্য moderator access management করেন, সেটাই ব্যবহার করুন।
-2. যদি এখনো কোনো Business Portfolio (Business Manager account) না থাকে, একটা তৈরি করুন (agency-র নামে, যেমন "ChatCat Pro" বা আপনার agency-র নাম)।
+2. যদি এখনো কোনো Business Portfolio (Business Manager account) না থাকে, একটা তৈরি করুন (agency-র নামে, যেমন "FlamboyAI" বা আপনার agency-র নাম)।
 3. **Meta App**: আমাদের existing App (`FB_APP_ID = 856374517446840`, যেটা Facebook Messenger-এর জন্য ব্যবহার হচ্ছে) — এতেই WhatsApp product যোগ করতে পারবেন। developers.facebook.com → My Apps → এই App → বাম sidebar-এ "Add Product" → **WhatsApp** → Set Up।
    - (চাইলে আলাদা একটা App-ও বানাতে পারেন, কিন্তু একই App ব্যবহার করলে setup সহজ হয়।)
 4. **Webhook — এটা শুধু একবার করতে হবে, তারপর প্রতিটা নতুন number automatic এর আওতায় চলে আসবে:**
    - ⚠️ **গুরুত্বপূর্ণ ক্রম**: এই ধাপটা আগে করা যাবে না — আমাদের backend webhook verify করে শুধু তখনই যদি সেই token কোনো ইতিমধ্যে-connected (waEnabled=true) number-এর সাথে match করে। তাই **প্রথমে Part B-এর ধাপ 1-6 করে অন্তত একটা নম্বর (আপনার নিজের) dashboard-এ save + enable করে ফেলুন**, তারপর এই webhook ধাপে ফিরে আসুন।
    - App → WhatsApp → Configuration → Webhook
-   - Callback URL: `https://api.chatcat.pro/wa-webhook`
+   - Callback URL: `https://api.flamboyai.com/wa-webhook`
    - Verify Token: dashboard-এ Part B ধাপ 6-এ যে verify token generate করেছিলেন, **ঠিক সেটাই** এখানে বসান
    - "Verify and Save" click করুন — এবার সফল হবে
    - তারপর "Webhook fields" list-এ **`messages`** row খুঁজে বের করে তার পাশে **Subscribe** ON করুন (এটাই আসল, `account_alerts` লাগবে না)
@@ -31,7 +31,7 @@
 
 যেহেতু এটা আপনার নিজের নম্বর, পুরো flow-টা নিজেই করে ফেলতে পারবেন — কোনো request/approval লাগবে না।
 
-1. **business.facebook.com** → Business Settings → Accounts → **WhatsApp Accounts** → Add → "Create a WhatsApp Business Account" → নাম দিন (যেমন "ChatCat Pro - Main")
+1. **business.facebook.com** → Business Settings → Accounts → **WhatsApp Accounts** → Add → "Create a WhatsApp Business Account" → নাম দিন (যেমন "FlamboyAI - Main")
 2. WABA-র ভেতরে **Add phone number** → আপনার নম্বরটা দিন → SMS বা Call-এ OTP আসবে → verify করুন (নম্বরটা আপনার নিজের বলে OTP-টা আপনিই পাবেন)
 3. এই WABA-টাকে App-এর সাথে connect করুন: App Dashboard → WhatsApp → Configuration → "Add phone number" বা "Link a WhatsApp Business Account" থেকে Part A-তে বানানো App-এর সাথে এই WABA select করুন। (এটা করলে webhook automatic এই number-এর জন্যও কাজ করবে — নতুন করে webhook বসাতে হবে না)
 4. **System User Token generate করুন:**
@@ -40,7 +40,7 @@
    - "Generate New Token" → App select করুন → permission: `whatsapp_business_messaging`, `whatsapp_business_management` → Generate → token কপি করুন (এটা permanent, শুধু একবারই দেখাবে, সেভ করে রাখুন)
 5. **Phone Number ID কপি করুন:** App → WhatsApp → API Setup → "From" section-এ Phone Number ID দেখাবে
 6. **Dashboard-এ যোগ করুন:**
-   - app.chatcat.pro-তে নিজের account দিয়ে login করুন → Settings → WhatsApp Connection
+   - app.flamboyai.com-তে নিজের account দিয়ে login করুন → Settings → WhatsApp Connection
    - "নিজে setup করতে চান? (Advanced)" এর নিচে "Manual token entry দেখান" click করুন
    - Phone Number ID, Access Token paste করুন, Webhook Verify Token "🔀 Generate" দিয়ে বানিয়ে নিন
    - Save করুন, তারপর toggle ON করুন
@@ -53,7 +53,7 @@
 এখানে client-কে **শুধু নম্বরটা দিতে হবে আর একটা OTP call receive করতে হবে** — বাকি সব আপনি করবেন।
 
 ### Client-এর করণীয় (এইটুকুই):
-1. app.chatcat.pro-তে login করে **Settings → WhatsApp Connection**-এ যাবে
+1. app.flamboyai.com-তে login করে **Settings → WhatsApp Connection**-এ যাবে
 2. "✨ WhatsApp Automation চালু করতে চান?" card-এ তার WhatsApp Business নম্বর দিয়ে "📲 Request পাঠান" click করবে
 3. এরপর অপেক্ষা করবে — Telegram-এ আপনার কাছে notification চলে যাবে
 

@@ -36,8 +36,8 @@ export function CatalogPage({ th, pageId, onToast }: {
   const productUrl  = (code: string) => `${backendBase}/catalog/${catalogKey}/product/${code}`;
 
   const websiteUrl: string | null = catalogData?.page?.websiteUrl || null;
-  // mode: 'own' if websiteUrl is set, 'chatcat' otherwise
-  const mode = websiteUrl ? 'own' : 'chatcat';
+  // mode: 'own' if websiteUrl is set, 'FlamboyAI' otherwise
+  const mode = websiteUrl ? 'own' : 'FlamboyAI';
 
   const loadPreview = useCallback(async () => {
     setLoading(true);
@@ -152,19 +152,19 @@ export function CatalogPage({ th, pageId, onToast }: {
     setSavingOwnUrl(true);
     try {
       await patchSettings({ websiteUrl: url || null });
-      onToast(url ? '✅ ' + copy('নিজের Website সেট হয়েছে', 'Your website has been set') : '✅ ' + copy('ChatCat Catalog এ ফিরে গেছে', 'Switched back to ChatCat Catalog'), 'success');
+      onToast(url ? '✅ ' + copy('নিজের Website সেট হয়েছে', 'Your website has been set') : '✅ ' + copy('FlamboyAI Catalog এ ফিরে গেছে', 'Switched back to FlamboyAI Catalog'), 'success');
       setEditingOwnUrl(false);
       await loadPreview();
     } catch (e: any) { onToast(e.message, 'error'); }
     finally { setSavingOwnUrl(false); }
   };
 
-  const switchToChatCat = async () => {
-    if (!confirm(copy('নিজের website সরিয়ে ChatCat Catalog এ ফিরবেন?', 'Remove your website and switch back to ChatCat Catalog?'))) return;
+  const switchToFlamboyAI = async () => {
+    if (!confirm(copy('নিজের website সরিয়ে FlamboyAI Catalog এ ফিরবেন?', 'Remove your website and switch back to FlamboyAI Catalog?'))) return;
     setSavingOwnUrl(true);
     try {
       await patchSettings({ websiteUrl: null });
-      onToast('✅ ' + copy('ChatCat Catalog এ ফিরে গেছে', 'Switched back to ChatCat Catalog'), 'success');
+      onToast('✅ ' + copy('FlamboyAI Catalog এ ফিরে গেছে', 'Switched back to FlamboyAI Catalog'), 'success');
       await loadPreview();
     } catch (e: any) { onToast(e.message, 'error'); }
     finally { setSavingOwnUrl(false); }
@@ -205,7 +205,7 @@ export function CatalogPage({ th, pageId, onToast }: {
       <div style={{ ...th.card, border: `2px solid ${th.accent}22`, padding: 0, overflow: 'hidden' }}>
         {/* Toggle tabs */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: `1px solid ${th.border}` }}>
-          {(['own', 'chatcat'] as const).map(m => {
+          {(['own', 'FlamboyAI'] as const).map(m => {
             const isActive = mode === m || (m === 'own' && editingOwnUrl);
             return (
               <button
@@ -213,9 +213,9 @@ export function CatalogPage({ th, pageId, onToast }: {
                 onClick={() => {
                   if (m === 'own' && mode !== 'own') {
                     setEditingOwnUrl(true);
-                  } else if (m === 'chatcat') {
+                  } else if (m === 'FlamboyAI') {
                     if (editingOwnUrl) { setEditingOwnUrl(false); setOwnUrlInput(''); }
-                    else if (mode !== 'chatcat') switchToChatCat();
+                    else if (mode !== 'FlamboyAI') switchToFlamboyAI();
                   }
                 }}
                 style={{
@@ -229,7 +229,7 @@ export function CatalogPage({ th, pageId, onToast }: {
               >
                 {m === 'own'
                   ? <>{copy('🔗 নিজের Website আছে', '🔗 I have my own website')}</>
-                  : <>{copy('🛒 ChatCat Website বানাব', '🛒 Build with ChatCat')}</>
+                  : <>{copy('🛒 FlamboyAI Website বানাব', '🛒 Build with FlamboyAI')}</>
                 }
                 {isActive && <span style={{ fontSize: 10, background: th.accent, color: '#fff', borderRadius: 20, padding: '1px 7px', fontWeight: 800 }}>{copy('চালু', 'Active')}</span>}
               </button>
@@ -248,7 +248,7 @@ export function CatalogPage({ th, pageId, onToast }: {
                     {copy('নিজের Website সংযুক্ত আছে', 'Your own website is connected')}
                   </div>
                   <div style={{ fontSize: 12, color: th.muted, lineHeight: 1.6 }}>
-                    {copy('Bot customer কে এই link পাঠাবে। ChatCat-এর under-এ কোনো website তৈরি হবে না।', 'The bot will send this link to customers. No website will be created under ChatCat.')}
+                    {copy('Bot customer কে এই link পাঠাবে। FlamboyAI-এর under-এ কোনো website তৈরি হবে না।', 'The bot will send this link to customers. No website will be created under FlamboyAI.')}
                   </div>
                 </div>
               </div>
@@ -348,7 +348,7 @@ export function CatalogPage({ th, pageId, onToast }: {
                         ))}
                       </div>
                       <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: `${th.accent}0d`, border: `1px dashed ${th.accent}33`, fontSize: 12, color: th.muted, lineHeight: 1.6 }}>
-                        ℹ️ {copy('Product views ও auto-sync শুধু ChatCat website এ পাওয়া যায়।', 'Product views & auto-sync are only available with ChatCat website.')}
+                        ℹ️ {copy('Product views ও auto-sync শুধু FlamboyAI website এ পাওয়া যায়।', 'Product views & auto-sync are only available with FlamboyAI website.')}
                       </div>
                     </div>
                   </div>
@@ -357,15 +357,15 @@ export function CatalogPage({ th, pageId, onToast }: {
             </div>
           )}
 
-          {/* ── CHATCAT MODE — add own website prompt ── */}
-          {mode === 'chatcat' && !editingOwnUrl && (
+          {/* ── FlamboyAI MODE — add own website prompt ── */}
+          {mode === 'FlamboyAI' && !editingOwnUrl && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: `${th.accent}0d`, border: `1px solid ${th.accent}22` }}>
                 <span style={{ fontSize: 20, flexShrink: 0 }}>💡</span>
                 <div style={{ fontSize: 12.5, color: th.muted, lineHeight: 1.7 }}>
                   {copy(
-                    'নিজের website থাকলে "নিজের Website আছে" tab এ click করে সেটা add করুন — ChatCat এর under এ website তৈরি হবে না।',
-                    'If you already have your own website, click the "I have my own website" tab to add it — no website will be created under ChatCat.'
+                    'নিজের website থাকলে "নিজের Website আছে" tab এ click করে সেটা add করুন — FlamboyAI এর under এ website তৈরি হবে না।',
+                    'If you already have your own website, click the "I have my own website" tab to add it — no website will be created under FlamboyAI.'
                   )}
                 </div>
               </div>
@@ -373,7 +373,7 @@ export function CatalogPage({ th, pageId, onToast }: {
               {/* Website URL card */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, color: th.muted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                  {copy('✅ আপনার ChatCat Website Link', '✅ Your ChatCat Website Link')}
+                  {copy('✅ আপনার FlamboyAI Website Link', '✅ Your FlamboyAI Website Link')}
                 </div>
 
                 {editingSlug ? (
@@ -487,7 +487,7 @@ export function CatalogPage({ th, pageId, onToast }: {
                   }}>
                     <div style={{ color: th.muted }}>DNS Record (CNAME):</div>
                     <div style={{ color: th.accent }}>
-                      {customDomain || activeCustomDomain} <span style={{ color: th.muted }}>→</span> api.chatcat.pro
+                      {customDomain || activeCustomDomain} <span style={{ color: th.muted }}>→</span> api.flamboyai.com
                     </div>
                   </div>
                 )}
@@ -502,7 +502,7 @@ export function CatalogPage({ th, pageId, onToast }: {
           )}
 
           {/* Inline editing for switching to own website */}
-          {mode === 'chatcat' && editingOwnUrl && (
+          {mode === 'FlamboyAI' && editingOwnUrl && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>{copy('আপনার Website এর link দিন:', 'Enter your website link:')}</div>
               <input
@@ -519,7 +519,7 @@ export function CatalogPage({ th, pageId, onToast }: {
                 onKeyDown={e => { if (e.key === 'Enter') saveOwnUrl(); if (e.key === 'Escape') setEditingOwnUrl(false); }}
               />
               <div style={{ fontSize: 12, color: th.muted, lineHeight: 1.6 }}>
-                {copy('এই link save করলে bot customer কে এই link পাঠাবে এবং ChatCat website তৈরি বন্ধ হবে।', 'After saving, the bot will send this link to customers and the ChatCat catalog will be disabled.')}
+                {copy('এই link save করলে bot customer কে এই link পাঠাবে এবং FlamboyAI website তৈরি বন্ধ হবে।', 'After saving, the bot will send this link to customers and the FlamboyAI catalog will be disabled.')}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={saveOwnUrl} disabled={savingOwnUrl} style={{ ...th.btnPrimary, flex: 1, justifyContent: 'center', opacity: savingOwnUrl ? 0.7 : 1 }}>
@@ -532,8 +532,8 @@ export function CatalogPage({ th, pageId, onToast }: {
         </div>
       </div>
 
-      {/* Stats & QR — only in chatcat mode */}
-      {mode === 'chatcat' && (
+      {/* Stats & QR — only in FlamboyAI mode */}
+      {mode === 'FlamboyAI' && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
             {[

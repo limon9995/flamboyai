@@ -148,7 +148,7 @@ export class SpamCheckerService {
       // Step 1: GET page → session cookie + CSRF token
       const getRes = await axios.get('https://elitemart.com.bd/fraud-check', {
         timeout: 5000,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
         maxRedirects: 5,
       });
 
@@ -172,7 +172,7 @@ export class SpamCheckerService {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             Cookie: cookieHeader,
-            'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)',
+            'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)',
             Referer: 'https://elitemart.com.bd/fraud-check',
           },
           maxRedirects: 5,
@@ -222,7 +222,7 @@ export class SpamCheckerService {
     try {
       const getRes = await axios.get('https://fraudshield.bd/', {
         timeout: 6000,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
         maxRedirects: 5,
       });
 
@@ -256,7 +256,7 @@ export class SpamCheckerService {
                 'X-Requested-With': 'XMLHttpRequest',
                 Cookie: cookieHeader,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)',
+                'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)',
                 Referer: 'https://fraudshield.bd/',
               },
               validateStatus: (s) => s < 500,
@@ -342,7 +342,7 @@ export class SpamCheckerService {
         'https://www.bdcommerce.app/tools/delivery-fraud-check',
         {
           timeout: 7000,
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
           maxRedirects: 5,
         },
       );
@@ -375,7 +375,7 @@ export class SpamCheckerService {
             timeout: 7000,
             headers: {
               Cookie: cookieHeader,
-              'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)',
+              'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)',
               Referer: 'https://www.bdcommerce.app/tools/delivery-fraud-check',
               'Content-Type': 'application/json',
             },

@@ -249,8 +249,10 @@ export class SmartBotService {
         outputTokens: usage.outputTokens,
       });
     }
+    const charCount = systemPrompt.length + text.length + (parsed.reply?.length ?? 0);
     await this.walletService.deductUsage(pageId, 'SMART_BOT', {
       provider: usage.provider ?? 'gemini',
+      charCount,
     });
 
     // Real arithmetic, not LLM-guessed — model only signals it has gathered
@@ -403,7 +405,7 @@ export class SmartBotService {
     const website = String(page.websiteUrl || '').trim();
     if (website) return website;
     const base = (
-      process.env.CATALOG_BASE_URL || 'https://chatcat.pro'
+      process.env.CATALOG_BASE_URL || 'https://flamboyai.com'
     ).replace(/\/$/, '');
     const slug = page.catalogSlug || String(page.id);
     return `${base}/catalog/${slug}`;

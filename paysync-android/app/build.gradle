@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'pro.chatcat.paysync'
+    namespace 'pro.FlamboyAI.paysync'
     compileSdk 34
 
     defaultConfig {
-        applicationId "pro.chatcat.paysync"
+        applicationId "pro.FlamboyAI.paysync"
         minSdk 21
         targetSdk 34
         versionCode 1
@@ -41,7 +41,7 @@ dependencies {
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     
-    // HTTP Client for forwarding SMS to ChatCat API
+    // HTTP Client for forwarding SMS to FlamboyAI API
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     
     testImplementation 'junit:junit:4.13.2'

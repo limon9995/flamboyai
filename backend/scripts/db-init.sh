@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#  Chatcat Pro — First-Time Database Setup
+#  FlamboyAI — First-Time Database Setup
 #  Use this ONCE on a fresh PostgreSQL database.
 #  For subsequent deploys, use deploy.sh (which runs migrate deploy).
 # ============================================================
@@ -8,7 +8,7 @@
 set -e
 
 echo "========================================"
-echo "  Chatcat Pro — DB Init (First Time)"
+echo "  FlamboyAI — DB Init (First Time)"
 echo "========================================"
 
 # Confirm DATABASE_URL is set

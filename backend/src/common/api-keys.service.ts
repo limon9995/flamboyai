@@ -65,7 +65,7 @@ export interface ApiKeysConfig {
   adminWhatsappNumber?: string;
 }
 
-const DEFAULT_ADMIN_WHATSAPP_NUMBER = '01720450797';
+const DEFAULT_ADMIN_WHATSAPP_NUMBER = '01575897887';
 
 const FILE = join(process.cwd(), 'storage', 'settings', 'api-keys.json');
 

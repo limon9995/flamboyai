@@ -198,7 +198,7 @@ export function OnboardingFlow({ dark, user, activePage, onComplete, onSkip }: P
             background: 'linear-gradient(135deg,#6366f1,#a78bfa)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
           }}>
-            🐱 Chatcat
+            🐱 FlamboyAI
           </div>
           {typeof step === 'number' && step > 0 && step < 4 && (
             <button className="ob-btn-ghost" onClick={() => setShowSkipConfirm(true)} style={{
@@ -1040,7 +1040,7 @@ const PAYMENT_OPTIONS = [
     flow: 'Phone-এ payment SMS আসে → SMS Forwarder app bot-কে পাঠায় → Customer TxID দিলে match করে → Order auto-confirm ✅',
     steps: [
       { num: '১', title: 'একটা Android ফোন বেছে নিন', detail: 'যে ফোনে আপনার bKash/Nagad/Rocket-এর payment SMS আসে, সেই ফোনে setup করতে হবে।' },
-      { num: '২', title: '"ChatCat PaySync" app install করুন', detail: 'Onboarding শেষ হওয়ার পর Settings → SMS Gateway section থেকে APK download link পাবেন (Play Store-এ নেই, সরাসরি APK)।' },
+      { num: '২', title: '"FlamboyAI PaySync" app install করুন', detail: 'Onboarding শেষ হওয়ার পর Settings → SMS Gateway section থেকে APK download link পাবেন (Play Store-এ নেই, সরাসরি APK)।' },
       { num: '৩', title: 'Pairing token দিয়ে connect করুন', detail: 'App খুলে Settings page-এ দেখানো token বসিয়ে ফোনটা আপনার account-এর সাথে connect করুন, SMS read permission দিন।' },
       { num: '৪', title: 'SMS Gateway চালু করুন', detail: 'Settings page-এ গিয়ে "SMS Gateway চালু করুন" toggle ON করলেই payment verify শুরু হয়ে যাবে।' },
     ],

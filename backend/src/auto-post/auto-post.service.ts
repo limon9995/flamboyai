@@ -63,7 +63,7 @@ export class AutoPostService {
         select: { websiteUrl: true, catalogSlug: true },
       });
       if (page) {
-        const catalogBase = process.env.CATALOG_BASE_URL || 'https://chatcat.pro';
+        const catalogBase = process.env.CATALOG_BASE_URL || 'https://flamboyai.com';
         shopLink = page.websiteUrl?.trim() || (page.catalogSlug ? `${catalogBase}/catalog/${page.catalogSlug}` : '');
       }
     }
@@ -280,7 +280,7 @@ export class AutoPostService {
     const imageSize = ASPECT_SIZE[dto.aspectRatio || '1:1'] || 'square_hd';
 
     // Resolve absolute URL for uploaded photo
-    const apiBase = process.env.API_BASE_URL || 'https://api.chatcat.pro';
+    const apiBase = process.env.API_BASE_URL || 'https://api.flamboyai.com';
     const absolutePhotoUrl = dto.productPhotoUrl.startsWith('http')
       ? dto.productPhotoUrl
       : `${apiBase}${dto.productPhotoUrl}`;
@@ -555,7 +555,7 @@ export class AutoPostService {
 
     const token = this.encryption.decrypt(page.pageToken);
     const fbPageId = page.pageId;
-    const catalogBase = process.env.CATALOG_BASE_URL || 'https://chatcat.pro';
+    const catalogBase = process.env.CATALOG_BASE_URL || 'https://flamboyai.com';
     const shopLink = page.websiteUrl?.trim() || (page.catalogSlug ? `${catalogBase}/catalog/${page.catalogSlug}` : '');
 
     let fbPostId: string;
@@ -563,7 +563,7 @@ export class AutoPostService {
     if (imageUrl) {
       const absoluteImageUrl = imageUrl.startsWith('http')
         ? imageUrl
-        : `${process.env.API_BASE_URL || 'https://api.chatcat.pro'}${imageUrl}`;
+        : `${process.env.API_BASE_URL || 'https://api.flamboyai.com'}${imageUrl}`;
       const res = await fetch(`${FB_GRAPH}/${fbPageId}/photos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -1,4 +1,4 @@
-package pro.chatcat.paysync
+package pro.FlamboyAI.paysync
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -14,7 +14,7 @@ import java.io.IOException
 class SmsReceiver : BroadcastReceiver() {
 
     private val client = OkHttpClient()
-    private val WEBHOOK_URL = "https://api.chatcat.pro/sms-gateway/incoming"
+    private val WEBHOOK_URL = "https://api.flamboyai.com/sms-gateway/incoming"
 
     private val paymentSenders = setOf(
         "bkash", "16247", "nagad", "16167",
@@ -41,7 +41,7 @@ class SmsReceiver : BroadcastReceiver() {
     }
 
     private fun getTokens(context: Context): List<String> {
-        val prefs = context.getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         val raw = prefs.getString("pageTokens", null)
         if (!raw.isNullOrEmpty()) {
             return try {
@@ -75,7 +75,7 @@ class SmsReceiver : BroadcastReceiver() {
                 if (code in 200..299) {
                     increment(context, "sync_count")
                     val t = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
-                    context.getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+                    context.getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
                         .edit().putString("last_sync", t).apply()
                     addLog(context, "✅ $from — SMS সিঙ্ক সফল")
                 } else {
@@ -87,12 +87,12 @@ class SmsReceiver : BroadcastReceiver() {
     }
 
     private fun increment(context: Context, key: String) {
-        val p = context.getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val p = context.getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         p.edit().putInt(key, p.getInt(key, 0) + 1).apply()
     }
 
     private fun addLog(context: Context, message: String) {
-        val p = context.getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val p = context.getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         val t = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
         val updated = "[$t] $message\n${p.getString("sync_logs", "") ?: ""}"
         p.edit().putString("sync_logs", updated.split("\n").take(20).joinToString("\n")).apply()

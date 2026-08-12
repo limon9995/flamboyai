@@ -97,7 +97,7 @@ export function SignupPageComponent({ dark, setDark, onBack }: Props) {
 
         {/* Header */}
         <div style={{ textAlign:'center', marginBottom:28 }}>
-          <img src="/logo.png" alt="Chatcat" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: '50%', margin: '0 auto 14px', display: 'block' }} />
+          <img src="/logo.png" alt="FlamboyAI" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: '50%', margin: '0 auto 14px', display: 'block' }} />
           <div style={{ fontSize:22, fontWeight:800, color:text, letterSpacing:'-0.04em' }}>{copy('অ্যাকাউন্ট তৈরি করুন', 'Create Account')}</div>
           {/* Trial badge */}
           <div style={{

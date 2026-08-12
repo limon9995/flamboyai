@@ -16,7 +16,7 @@ export class OtpService {
   // the VPS provider blocks outbound SMTP ports (a common default block).
   private async sendViaResend(to: string, subject: string, html: string) {
     const apiKey = this.apiKeysService.getSync('resendApiKey');
-    const from = this.apiKeysService.getSync('resendFromEmail') || 'ChatCat Pro <onboarding@resend.dev>';
+    const from = this.apiKeysService.getSync('resendFromEmail') || 'FlamboyAI <onboarding@resend.dev>';
     if (!apiKey) throw new Error('RESEND_API_KEY not configured');
 
     const res = await fetch('https://api.resend.com/emails', {
@@ -38,7 +38,7 @@ export class OtpService {
     // Link to the hosted logo instead of embedding it as base64 — inlining the
     // ~420KB logo pushed the email past Gmail's ~102KB clipping threshold,
     // causing Gmail to hide the body behind "View entire message".
-    const storageBase = (this.apiKeysService.getSync('storagePublicUrl') || 'https://api.chatcat.pro/storage').replace(/\/+$/, '');
+    const storageBase = (this.apiKeysService.getSync('storagePublicUrl') || 'https://api.flamboyai.com/storage').replace(/\/+$/, '');
     const logoUrl = `${storageBase}/logo.png`;
 
     const code = String(crypto.randomInt(100000, 1000000));
@@ -54,8 +54,8 @@ export class OtpService {
 
     const isSignup = purpose === 'signup';
     const subject = isSignup
-      ? 'ChatCat Pro — Email Verification OTP'
-      : 'ChatCat Pro — Password Reset OTP';
+      ? 'FlamboyAI — Email Verification OTP'
+      : 'FlamboyAI — Password Reset OTP';
     const html = `
     <div style="background:#f1f0fb;padding:32px 16px;font-family:'Segoe UI',Arial,sans-serif">
       <div style="max-width:460px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(79,70,229,0.12)">
@@ -65,8 +65,8 @@ export class OtpService {
 
         <div style="padding:36px 32px 32px">
           <div style="text-align:center;margin-bottom:24px">
-            <img src="${logoUrl}" width="64" height="64" alt="ChatCat" style="width:64px;height:64px;object-fit:cover;border-radius:16px;box-shadow:0 4px 14px rgba(79,70,229,0.25)" />
-            <div style="margin-top:12px;font-size:19px;font-weight:800;color:#1e1b2e;letter-spacing:-0.02em">ChatCat Pro</div>
+            <img src="${logoUrl}" width="64" height="64" alt="FlamboyAI" style="width:64px;height:64px;object-fit:cover;border-radius:16px;box-shadow:0 4px 14px rgba(79,70,229,0.25)" />
+            <div style="margin-top:12px;font-size:19px;font-weight:800;color:#1e1b2e;letter-spacing:-0.02em">FlamboyAI</div>
           </div>
 
           <div style="text-align:center;margin-bottom:8px;font-size:15px;font-weight:700;color:#1e1b2e">
@@ -75,7 +75,7 @@ export class OtpService {
           <p style="text-align:center;color:#6b6478;font-size:13.5px;line-height:1.7;margin:0 0 26px">
             ${
               isSignup
-                ? 'ChatCat Pro account verify করতে নিচের কোডটি ব্যবহার করুন।'
+                ? 'FlamboyAI account verify করতে নিচের কোডটি ব্যবহার করুন।'
                 : 'আপনার account-এর password reset করতে নিচের কোডটি ব্যবহার করুন।'
             }
           </p>
@@ -90,13 +90,13 @@ export class OtpService {
           </div>
 
           <p style="color:#9691a8;font-size:12px;line-height:1.7;text-align:center;margin:0">
-            এই কোড কাউকে শেয়ার করবেন না — ChatCat কখনো email/message-এ কোড চাইবে না।<br>
+            এই কোড কাউকে শেয়ার করবেন না — FlamboyAI কখনো email/message-এ কোড চাইবে না।<br>
             আপনি যদি এই request না করে থাকেন, এই email ignore করুন।
           </p>
         </div>
 
         <div style="background:#faf9fd;padding:18px 32px;text-align:center;border-top:1px solid #f0edf7">
-          <div style="font-size:11px;color:#b3aec4">ChatCat Pro — Commerce Automation for Facebook Sellers</div>
+          <div style="font-size:11px;color:#b3aec4">FlamboyAI — Commerce Automation for Facebook Sellers</div>
         </div>
       </div>
     </div>

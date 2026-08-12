@@ -823,7 +823,7 @@ ${report.biggestExpenseCat ? `<div class="section-title">Biggest Expense Categor
     )
     .join('')}
 </tbody></table>
-<footer>ChatCat Pro V6 — Accounting Report | ${page?.businessName || page?.pageName || ''}</footer>
+<footer>FlamboyAI V6 — Accounting Report | ${page?.businessName || page?.pageName || ''}</footer>
 </body></html>`;
   }
 

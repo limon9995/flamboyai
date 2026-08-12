@@ -1,4 +1,4 @@
-package pro.chatcat.paysync
+package pro.FlamboyAI.paysync
 
 import android.content.ComponentName
 import android.content.Context
@@ -26,7 +26,7 @@ import java.io.IOException
 class MainActivity : AppCompatActivity() {
 
     private val httpClient = OkHttpClient()
-    private val API_BASE = "https://api.chatcat.pro"
+    private val API_BASE = "https://api.flamboyai.com"
 
     private lateinit var statusDot:           View
     private lateinit var statusText:          TextView
@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         clearLogsBtn.setOnClickListener {
-            getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE).edit()
+            getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE).edit()
                 .putString("sync_logs", "")
                 .putInt("sync_count", 0)
                 .putInt("fail_count", 0)
@@ -150,7 +150,7 @@ class MainActivity : AppCompatActivity() {
     // ── Token helpers ─────────────────────────────────────────────────────────
 
     private fun migrateOldToken() {
-        val prefs = getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         val old = prefs.getString("pageToken", null)
         if (!old.isNullOrEmpty() && prefs.getString("pageTokens", null) == null) {
             val arr = JSONArray().apply { put(old) }
@@ -159,7 +159,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun getTokens(): List<String> {
-        val prefs = getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         val raw = prefs.getString("pageTokens", null) ?: return emptyList()
         return try {
             val arr = JSONArray(raw)
@@ -169,7 +169,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveTokens(tokens: List<String>) {
         val arr = JSONArray().apply { tokens.forEach { put(it) } }
-        getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
             .edit().putString("pageTokens", arr.toString()).apply()
     }
 
@@ -258,12 +258,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun markTokenVerified(token: String, verified: Boolean) {
         val key = "verified_${token.hashCode()}"
-        getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE).edit().putBoolean(key, verified).apply()
+        getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE).edit().putBoolean(key, verified).apply()
     }
 
     private fun isTokenVerified(token: String): Boolean {
         val key = "verified_${token.hashCode()}"
-        return getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE).getBoolean(key, false)
+        return getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE).getBoolean(key, false)
     }
 
     private fun updatePermissionIndicators() {
@@ -277,7 +277,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateStats() {
-        val prefs = getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         statSyncCount.text = prefs.getInt("sync_count", 0).toString()
         statFailCount.text = prefs.getInt("fail_count", 0).toString()
         val last = prefs.getString("last_sync", "—")
@@ -311,12 +311,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadLogs() {
-        val logs = getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE).getString("sync_logs", "")
+        val logs = getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE).getString("sync_logs", "")
         logsTextView.text = if (logs.isNullOrEmpty()) "কোনো লগ পাওয়া যায়নি।" else logs
     }
 
     private fun addLog(message: String) {
-        val prefs = getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         val time = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
         val updated = "[$time] $message\n${prefs.getString("sync_logs", "") ?: ""}"
         prefs.edit().putString("sync_logs", updated.split("\n").take(20).joinToString("\n")).apply()

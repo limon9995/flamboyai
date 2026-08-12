@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { OtpService } from './otp.service';
 
-export type AuthRole = 'admin' | 'client';
+export type AuthRole = 'admin' | 'client' | 'agent';
 
 // ── Public user shape returned to callers ─────────────────────────────────────
 export interface PublicUser {
@@ -23,6 +23,11 @@ export interface PublicUser {
   isActive: boolean;
   forcePasswordChange: boolean;
   createdAt: string;
+  // Agent (reseller) fields — only meaningful when role === 'agent'
+  referralCode?: string;
+  commissionPercentRecharge?: number;
+  commissionPercentSubscription?: number;
+  referredByAgentId?: string;
 }
 
 @Injectable()
@@ -51,6 +56,10 @@ export class AuthService {
     pageIds?: number[];
     isActive?: boolean;
     forcePasswordChange?: boolean;
+    referralCode?: string; // client: the agent referral code they signed up under
+    commissionPercentRecharge?: number; // agent creation only
+    commissionPercentSubscription?: number; // agent creation only
+    newAgentReferralCode?: string; // agent creation only — auto-generated if omitted
   }) {
     // Phone number can be used as username — normalize it
     const rawIdentifier = body.username || body.phone || body.email || '';
@@ -75,7 +84,31 @@ export class AuthService {
     const { salt, passwordHash } = this.hashPassword(password);
     const displayName = body.name?.trim() || username;
 
-    const role = (body.role === 'admin' ? 'admin' : 'client') as AuthRole;
+    const role = (
+      body.role === 'admin' ? 'admin' : body.role === 'agent' ? 'agent' : 'client'
+    ) as AuthRole;
+
+    // A new client who signed up via an agent's referral link gets stamped
+    // with that agent's id. Invalid/unknown codes are silently ignored —
+    // referral attribution should never block signup.
+    let referredByAgentId: string | undefined;
+    if (role === 'client' && body.referralCode?.trim()) {
+      const agent = await this.prisma.user.findFirst({
+        where: { referralCode: body.referralCode.trim(), role: 'agent', isActive: true },
+        select: { id: true },
+      });
+      referredByAgentId = agent?.id;
+    }
+
+    const agentFields =
+      role === 'agent'
+        ? {
+            referralCode: body.newAgentReferralCode ?? (await this.generateAgentReferralCode()),
+            commissionPercentRecharge: body.commissionPercentRecharge ?? null,
+            commissionPercentSubscription: body.commissionPercentSubscription ?? null,
+          }
+        : {};
+
     const user = await this.prisma.user.create({
       data: {
         username,
@@ -87,6 +120,8 @@ export class AuthService {
         salt,
         forcePasswordChange: body.forcePasswordChange ?? false,
         pageIds: JSON.stringify(this.normalizePageIds(body.pageIds || [])),
+        referredByAgentId: referredByAgentId ?? null,
+        ...agentFields,
       },
     });
 
@@ -121,7 +156,7 @@ export class AuthService {
       }
     }
 
-    return this.publicUser(user);
+    return await this.publicUser(user);
   }
 
   // ── Login ─────────────────────────────────────────────────────────────────
@@ -144,7 +179,7 @@ export class AuthService {
 
     return {
       token,
-      user: this.publicUser(user),
+      user: await this.publicUser(user),
       expiresAt: expires.toISOString(),
       mustChangePassword: user.forcePasswordChange,
     };
@@ -191,7 +226,7 @@ export class AuthService {
       where: { id: session.userId },
     });
     if (!user) throw new UnauthorizedException('User not found');
-    return this.publicUser(user);
+    return await this.publicUser(user);
   }
 
   // ── Logout ────────────────────────────────────────────────────────────────
@@ -208,10 +243,13 @@ export class AuthService {
     });
     if (!user) throw new UnauthorizedException('User not found');
     if (!user.isActive) throw new ForbiddenException('Account is inactive');
-    return this.publicUser(user);
+    return await this.publicUser(user);
   }
 
   // ── Page access check ─────────────────────────────────────────────────────
+  // Deliberately kept synchronous: agents are scoped via the same pageIds
+  // array as clients (computed once, in publicUser(), from their referred
+  // clients' pages), so no extra async lookup is needed here.
   ensurePageAccess(user: PublicUser, pageId: number) {
     if (user.role === 'admin') return true;
     if (!user.pageIds.includes(pageId))
@@ -301,7 +339,7 @@ export class AuthService {
     const users = await this.prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
     });
-    return users.map((u) => this.publicUser(u));
+    return Promise.all(users.map((u) => this.publicUser(u)));
   }
 
   // ── Admin: update user ────────────────────────────────────────────────────
@@ -319,14 +357,17 @@ export class AuthService {
     if (body.name !== undefined) data.name = String(body.name).trim();
     if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
     if (body.role !== undefined)
-      data.role = body.role === 'admin' ? 'admin' : 'client';
+      // Only reachable via the @Roles('admin')-guarded admin routes, so an
+      // admin explicitly assigning 'agent' here is trusted.
+      data.role =
+        body.role === 'admin' ? 'admin' : body.role === 'agent' ? 'agent' : 'client';
     if (body.pageIds !== undefined)
       data.pageIds = JSON.stringify(this.normalizePageIds(body.pageIds));
     if (body.forcePasswordChange !== undefined)
       data.forcePasswordChange = Boolean(body.forcePasswordChange);
 
     const user = await this.prisma.user.update({ where: { id: userId }, data });
-    return this.publicUser(user);
+    return await this.publicUser(user);
   }
 
   // ── Admin: delete user ────────────────────────────────────────────────────
@@ -407,6 +448,7 @@ export class AuthService {
     name: string;
     username?: string;
     password: string;
+    referralCode?: string;
   }): Promise<PublicUser> {
     const email = body.email.trim().toLowerCase();
     const valid = await this.otp.verifyOtp(email, body.code, 'signup');
@@ -419,6 +461,7 @@ export class AuthService {
       name: username,
       role: 'client',
       isActive: true,
+      referralCode: body.referralCode,
     });
   }
 
@@ -554,7 +597,7 @@ export class AuthService {
     const resultId = crypto.randomUUID();
     this.pendingGoogleLogins.set(resultId, {
       token,
-      user: this.publicUser(user),
+      user: await this.publicUser(user),
       createdAt: Date.now(),
     });
     this.cleanupPendingGoogleLogins();
@@ -562,6 +605,8 @@ export class AuthService {
   }
 
   getFrontendBaseUrl() {
+    const dashboardUrl = String(process.env.DASHBOARD_URL || '').trim();
+    if (dashboardUrl) return dashboardUrl.replace(/\/+$/, '');
     const landingUrl = String(process.env.LANDING_PAGE_URL || '').trim();
     if (landingUrl) return landingUrl.replace(/\/+$/, '');
     const storageUrl = String(process.env.STORAGE_PUBLIC_URL || '').trim();
@@ -685,21 +730,56 @@ export class AuthService {
     this.logger.log(`[Auth] Admin user "${adminUsername}" created from env`);
   }
 
-  publicUser(user: any): PublicUser {
+  async publicUser(user: any): Promise<PublicUser> {
+    // Agents aren't scoped via the pageIds column (that's a client-only
+    // concept) — instead their accessible pages are computed on the fly from
+    // whichever clients signed up via their referral link, so the existing
+    // ensurePageAccess()/pageIds-based checks throughout the app work for
+    // agents automatically with no changes to those call sites.
+    const pageIds =
+      user.role === 'agent'
+        ? await this.getAgentPageIds(user.id)
+        : this.parsePageIds(user.pageIds);
+
     return {
       id: user.id,
       username: user.username,
       email: user.email ?? undefined,
       name: user.name || user.username,
       role: user.role as AuthRole,
-      pageIds: this.parsePageIds(user.pageIds),
+      pageIds,
       isActive: user.isActive,
       forcePasswordChange: Boolean(user.forcePasswordChange),
       createdAt:
         user.createdAt instanceof Date
           ? user.createdAt.toISOString()
           : String(user.createdAt),
+      referralCode: user.referralCode ?? undefined,
+      commissionPercentRecharge: user.commissionPercentRecharge ?? undefined,
+      commissionPercentSubscription:
+        user.commissionPercentSubscription ?? undefined,
+      referredByAgentId: user.referredByAgentId ?? undefined,
     };
+  }
+
+  private async getAgentPageIds(agentId: string): Promise<number[]> {
+    const pages = await this.prisma.page.findMany({
+      where: { owner: { referredByAgentId: agentId } },
+      select: { id: true },
+    });
+    return pages.map((p) => p.id);
+  }
+
+  private async generateAgentReferralCode(): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const code = crypto.randomBytes(4).toString('hex');
+      const existing = await this.prisma.user.findUnique({
+        where: { referralCode: code },
+        select: { id: true },
+      });
+      if (!existing) return code;
+    }
+    throw new Error('Could not generate a unique agent referral code');
   }
 
   private hashPassword(password: string) {

@@ -19,6 +19,8 @@ describe('AdminService', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
+      {} as any,
     );
   });
 

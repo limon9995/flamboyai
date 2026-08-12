@@ -48,11 +48,16 @@ import {
   resolveDeliveryFee,
   resolveMapsShortLink,
 } from '../common/restaurant-delivery';
+import {
+  buildProductCardButtons,
+  CUSTOM_CARD_BTN_PREFIX,
+  parseCardButtons,
+} from '../common/product-card-buttons';
 
 function getFullImageUrl(url?: string | null): string | undefined {
   if (!url) return undefined;
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  const base = process.env.API_BASE_URL || 'https://api.chatcat.pro';
+  const base = process.env.API_BASE_URL || 'https://api.flamboyai.com';
   return `${base.replace(/\/$/, '')}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
@@ -223,16 +228,20 @@ export class WebhookService implements OnModuleDestroy {
           if (!event.message) continue;
         }
 
-        // Card-view postback. Three payload shapes exist:
+        // Card-view postback. Payload shapes:
         //   ORDER_<code>            — catalog card, starts an order draft
         //   SELECT_PRODUCT:<code>   — vision-match card, starts an order draft
         //   DETAILS_<code>          — "বিস্তারিত দেখুন" on a card for a
         //                             merchant using their own website
-        //                             (no ChatCat product page to link to)
+        //                             (no FlamboyAIduct page to link to)
+        //   CARDBTN:<btnId>:<code>  — client-configured custom button
+        //                             (product-card-buttons.ts) — replies
+        //                             with the client's configured text
         if (event.postback?.payload && !event.message) {
           const payload: string = String(event.postback.payload);
           let productCode: string | null = null;
-          let kind: 'order' | 'details' = 'order';
+          let kind: 'order' | 'details' | 'custom' = 'order';
+          let customBtnId: string | null = null;
           if (payload.startsWith('ORDER_')) {
             productCode = payload.slice(6).toUpperCase();
           } else if (payload.startsWith('SELECT_PRODUCT:')) {
@@ -240,6 +249,14 @@ export class WebhookService implements OnModuleDestroy {
           } else if (payload.startsWith('DETAILS_')) {
             productCode = payload.slice(8).toUpperCase();
             kind = 'details';
+          } else if (payload.startsWith(CUSTOM_CARD_BTN_PREFIX)) {
+            const rest = payload.slice(CUSTOM_CARD_BTN_PREFIX.length);
+            const sep = rest.lastIndexOf(':');
+            if (sep > 0) {
+              customBtnId = rest.slice(0, sep);
+              productCode = rest.slice(sep + 1).toUpperCase();
+              kind = 'custom';
+            }
           }
           if (productCode) {
             // Debounce: ignore duplicate postback within 5 seconds (double-click)
@@ -259,6 +276,8 @@ export class WebhookService implements OnModuleDestroy {
             }
             if (kind === 'details') {
               this.handleProductDetails(resolvedPage, psid, productCode).catch(() => {});
+            } else if (kind === 'custom' && customBtnId) {
+              this.handleCustomCardButton(resolvedPage, psid, customBtnId).catch(() => {});
             } else {
               this.handleCatalogReferral(resolvedPage, psid, productCode).catch(() => {});
             }
@@ -625,7 +644,7 @@ export class WebhookService implements OnModuleDestroy {
 
   /**
    * "বিস্তারিত দেখুন" postback for merchants who redirected their storefront
-   * to their own website (Page.websiteUrl set) — there's no ChatCat-hosted
+   * to their own website (Page.websiteUrl set) — there's no FlamboyAI-hosted
    * product page to link to, so send the full description in-chat instead.
    */
   private async handleProductDetails(
@@ -669,6 +688,26 @@ export class WebhookService implements OnModuleDestroy {
       )
       .catch((err) =>
         this.logger.error(`[ProductDetails] sendText failed psid=${psid}: ${err}`),
+      );
+  }
+
+  /**
+   * Client-configured custom card button (product-card-buttons.ts) with a
+   * fixed reply-text action — replies with whatever text the client set for
+   * that button in Settings.
+   */
+  private async handleCustomCardButton(
+    page: any,
+    psid: string,
+    buttonId: string,
+  ): Promise<void> {
+    const buttons = parseCardButtons(page.productCardButtonsJson);
+    const btn = buttons.find((b) => b.id === buttonId && b.type === 'custom');
+    if (!btn?.replyText) return;
+    await this.messenger
+      .sendText(page.pageToken, psid, btn.replyText)
+      .catch((err) =>
+        this.logger.error(`[CustomCardBtn] sendText failed psid=${psid}: ${err}`),
       );
   }
 
@@ -922,15 +961,15 @@ export class WebhookService implements OnModuleDestroy {
         return;
       }
       if (aiStatus === 'ok') {
-        const reply = await this.generateBusinessBotReply(
+        const result = await this.generateBusinessBotReply(
           page.businessInfo as string,
           text,
           pageId,
           psid,
         );
-        if (reply) {
-          await this.safeSend(token, psid, reply);
-          void this.walletService.deductUsage(pageId, 'TEXT');
+        if (result) {
+          await this.safeSend(token, psid, result.reply);
+          void this.walletService.deductUsage(pageId, 'TEXT', { charCount: result.charCount });
           return;
         }
       } else {
@@ -2117,7 +2156,7 @@ export class WebhookService implements OnModuleDestroy {
 
   private buildVisionShortlistUrl(page: any, codes: string[]): string {
     const base = (
-      process.env.CATALOG_BASE_URL || 'https://chatcat.pro'
+      process.env.CATALOG_BASE_URL || 'https://flamboyai.com'
     ).replace(/\/$/, '');
     const pageKey = page.catalogSlug || String(page.id);
     return `${base}/catalog/${encodeURIComponent(String(pageKey))}?select=1&codes=${encodeURIComponent(codes.join(','))}`;
@@ -2127,7 +2166,7 @@ export class WebhookService implements OnModuleDestroy {
     const websiteUrl = String(page.websiteUrl || '').trim();
     if (websiteUrl) return websiteUrl;
     const base = (
-      process.env.CATALOG_BASE_URL || 'https://chatcat.pro'
+      process.env.CATALOG_BASE_URL || 'https://flamboyai.com'
     ).replace(/\/$/, '');
     const slug = page.catalogSlug || String(page.id);
     return `${base}/catalog/${encodeURIComponent(String(slug))}`;
@@ -2174,7 +2213,7 @@ export class WebhookService implements OnModuleDestroy {
     const catalogUrl = this.buildCatalogUrl(page);
     const businessName = page.businessName || page.pageName || 'আমাদের';
     const sym = page.currencySymbol || '৳';
-    const base = (process.env.CATALOG_BASE_URL || 'https://chatcat.pro').replace(/\/$/, '');
+    const base = (process.env.CATALOG_BASE_URL || 'https://flamboyai.com').replace(/\/$/, '');
     const slug = page.catalogSlug || String(page.id);
 
     // Restaurant: lead with the actual menu photo(s) — that's what a food
@@ -2209,7 +2248,7 @@ export class WebhookService implements OnModuleDestroy {
     }
 
     // Merchant has redirected their storefront to their own website
-    // (Page.websiteUrl set) — there's no ChatCat-hosted product page to send
+    // (Page.websiteUrl set) — there's no FlamboyAI-hosted product page to send
     // them to, so "বিস্তারিত দেখুন" should send the description in-chat
     // instead of linking back to our catalog.
     const usesOwnWebsite = !!String(page.websiteUrl || '').trim();
@@ -2237,28 +2276,29 @@ export class WebhookService implements OnModuleDestroy {
               : p.description
                 ? p.description.slice(0, 80)
                 : (p as any).category || '';
+          const productUrl = `${base}/catalog/${encodeURIComponent(slug)}/product/${encodeURIComponent(p.code)}`;
           return {
             title: `${p.name || p.code} — ${priceTxt}${hasOffer ? ' 🔥' : ''}`,
             image_url: getFullImageUrl(p.imageUrl) || logoUrl,
             subtitle,
-          buttons: [
-            usesOwnWebsite
-              ? {
-                  type: 'postback' as const,
-                  title: 'বিস্তারিত দেখুন',
-                  payload: `DETAILS_${p.code}`,
-                }
-              : {
-                  type: 'web_url' as const,
-                  url: `${base}/catalog/${encodeURIComponent(slug)}/product/${encodeURIComponent(p.code)}`,
-                  title: 'বিস্তারিত দেখুন',
-                },
-            {
-              type: 'postback' as const,
-              title: 'Order করব',
-              payload: `ORDER_${p.code}`,
-            },
-          ],
+            buttons: buildProductCardButtons(page, { code: p.code, productUrl }, [
+              usesOwnWebsite
+                ? {
+                    type: 'postback' as const,
+                    title: 'বিস্তারিত দেখুন',
+                    payload: `DETAILS_${p.code}`,
+                  }
+                : {
+                    type: 'web_url' as const,
+                    url: productUrl,
+                    title: 'বিস্তারিত দেখুন',
+                  },
+              {
+                type: 'postback' as const,
+                title: 'Order করব',
+                payload: `ORDER_${p.code}`,
+              },
+            ]),
           };
         });
         await this.messenger.sendGenericTemplate(token, psid, elements);
@@ -4269,7 +4309,7 @@ If you cannot match any product with confidence > 0.5, return:
     customerText: string,
     pageId: number,
     psid: string,
-  ): Promise<string | null> {
+  ): Promise<{ reply: string; charCount: number } | null> {
     const geminiKey = process.env.GEMINI_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
 
@@ -4318,7 +4358,7 @@ ${businessInfo}
         if (res.ok) {
           const data = await res.json();
           const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-          if (text) return text;
+          if (text) return { reply: text, charCount: systemPrompt.length + customerText.length + text.length };
         }
       } catch (e: any) {
         this.logger.warn(`[BusinessBot] Gemini failed: ${e?.message}`);
@@ -4348,7 +4388,7 @@ ${businessInfo}
         if (res.ok) {
           const data = await res.json();
           const text = (data?.choices?.[0]?.message?.content ?? '').trim();
-          if (text) return text;
+          if (text) return { reply: text, charCount: systemPrompt.length + customerText.length + text.length };
         }
       } catch (e: any) {
         this.logger.warn(`[BusinessBot] OpenAI failed: ${e?.message}`);

@@ -44,6 +44,7 @@ export class AuthController {
       pageIds: [],
       isActive: true,
       forcePasswordChange: false,
+      referralCode: body.referralCode,
     });
   }
 
@@ -63,6 +64,7 @@ export class AuthController {
       code: body.code,
       name: body.name,
       password: body.password,
+      referralCode: body.referralCode,
     });
   }
 

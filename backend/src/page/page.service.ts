@@ -318,7 +318,7 @@ export class PageService {
     if (!url || !url.startsWith('http')) return { text: '' };
     try {
       const res = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
         signal: AbortSignal.timeout(15_000),
       });
       if (!res.ok) return { text: '' };

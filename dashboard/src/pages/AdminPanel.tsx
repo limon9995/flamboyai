@@ -3,7 +3,7 @@ import { CardHeader, EmptyState, FieldWithInfo, InfoButton, Spinner } from '../c
 import type { Theme } from '../components/ui';
 import { API_BASE, useApi } from '../hooks/useApi';
 
-type AdminTab = 'overview' | 'clients' | 'global-questions' | 'global-replies' | 'learning-log' | 'courier-tutorials' | 'billing' | 'call-servers' | 'wallet' | 'pricing' | 'subscriptions' | 'page-requests' | 'wa-requests' | 'customers' | 'domain-setup' | 'api-keys' | 'reports';
+type AdminTab = 'overview' | 'clients' | 'global-questions' | 'global-replies' | 'learning-log' | 'courier-tutorials' | 'billing' | 'call-servers' | 'wallet' | 'pricing' | 'subscriptions' | 'page-requests' | 'wa-requests' | 'customers' | 'domain-setup' | 'api-keys' | 'reports' | 'agents' | 'my-clients' | 'earnings';
 
 interface TutorialsConfig {
   courier?: { pathao?: string; steadfast?: string; redx?: string; paperfly?: string };
@@ -78,10 +78,17 @@ const ADMIN_TABS: { key: AdminTab; label: string; icon: string; help: string }[]
   { key: 'subscriptions',     label: 'Subscriptions',     icon: '📅', help: 'প্রতিটি page এর server subscription expiry set করুন। Expired হলে bot বন্ধ হয়ে যায়।' },
   { key: 'domain-setup',      label: 'Custom Domains',    icon: '🌐', help: 'Customer-দের নিজের domain set করুন — Nginx config + SSL সব automatic হবে।' },
   { key: 'api-keys',          label: 'API Keys',          icon: '🔑', help: 'সব third-party API key গুলো এখান থেকে manage করুন। .env ফাইল edit না করেও চলবে।' },
+  { key: 'agents',            label: 'Agents',            icon: '🤝', help: 'Reseller/Agent account তৈরি করুন, commission rate set করুন, payout record করুন।' },
 ];
 
 const SECRET_TAB: { key: AdminTab; label: string; icon: string; help: string } =
   { key: 'customers', label: 'Sys Log', icon: '🔒', help: '' };
+
+// Agent (reseller) role sees only these two tabs — never the full admin surface.
+const AGENT_TABS: { key: AdminTab; label: string; icon: string; help: string }[] = [
+  { key: 'my-clients', label: 'My Clients',  icon: '👥', help: 'আপনার referral link দিয়ে signup করা client এবং তাদের page গুলো।' },
+  { key: 'earnings',   label: 'Earnings',    icon: '💰', help: 'আপনার referral link, commission rate, owed balance এবং payout history।' },
+];
 
 const REPLY_KEY_HELP: Record<string, string> = {
   ocr_processing:    'Customer ছবি পাঠালে প্রথম message। "Processing হচ্ছে" জানান।',
@@ -98,14 +105,17 @@ const REPLY_KEY_HELP: Record<string, string> = {
 
 const REPLY_KEYS = Object.keys(REPLY_KEY_HELP);
 
-export function AdminPanel({ th, onToast, onLogout }: {
-  th: Theme; onToast: (m: string, t?: any) => void; onLogout: () => void;
+export function AdminPanel({ th, onToast, onLogout, role }: {
+  th: Theme; onToast: (m: string, t?: any) => void; onLogout: () => void; role?: 'admin' | 'agent';
 }) {
   const { request } = useApi();
+  const isAgent = role === 'agent';
   const [tab, setTab] = useState<AdminTab>(() => {
     const saved = localStorage.getItem('admin_tab') as AdminTab | null;
-    const valid: AdminTab[] = ['overview','clients','customers','global-questions','global-replies','learning-log','courier-tutorials','billing','call-servers','wallet','pricing','subscriptions','page-requests','wa-requests','domain-setup','api-keys','reports'];
-    return saved && valid.includes(saved) ? saved : 'overview';
+    const valid: AdminTab[] = isAgent
+      ? ['my-clients', 'earnings']
+      : ['overview','clients','customers','global-questions','global-replies','learning-log','courier-tutorials','billing','call-servers','wallet','pricing','subscriptions','page-requests','wa-requests','domain-setup','api-keys','reports','agents'];
+    return saved && valid.includes(saved) ? saved : (isAgent ? 'my-clients' : 'overview');
   });
   const [pageRequests, setPageRequests] = useState<any[]>([]);
   const [pageReqFilter, setPageReqFilter] = useState<'all' | 'pending'>('pending');
@@ -152,26 +162,31 @@ export function AdminPanel({ th, onToast, onLogout }: {
   const [walletRequests, setWalletRequests] = useState<any[]>([]);
   const [walletLoading, setWalletLoading]   = useState(false);
   const [walletReqFilter, setWalletReqFilter] = useState<'all' | 'pending'>('pending');
-  const [walletDirectForm, setWalletDirectForm] = useState({ pageId: '', amountBdt: '', transactionId: '', note: '' });
+  const [walletDirectForm, setWalletDirectForm] = useState({ pageId: '', creditAmount: '', transactionId: '', note: '' });
   const [walletDirectSaving, setWalletDirectSaving] = useState(false);
-  const [walletAdjustForm, setWalletAdjustForm] = useState({ pageId: '', amountBdt: '', note: '' });
+  const [walletAdjustForm, setWalletAdjustForm] = useState({ pageId: '', creditAmount: '', note: '' });
   const [walletAdjustSaving, setWalletAdjustSaving] = useState(false);
+
+  // Credit packages tab state
+  const [creditPackages, setCreditPackages] = useState<any[]>([]);
+  const [packagesLoading, setPackagesLoading] = useState(false);
+  const [newPackageForm, setNewPackageForm] = useState({ name: '', priceBdt: '', credits: '' });
 
   // Pricing tab state
   const DEFAULT_PRICING = {
-    costPerKeywordReplyBdt: 0.02,
-    costPerTextMsgBdt: 0.05,
-    costPerImageBdt: 0.20,
-    costPerImageLocalBdt: 0.10,
-    costPerOcrLocalBdt: 0.02,
-    costPerOcrAiBdt: 0.05,
-    costPerVoiceMsgBdt: 1.00,
-    costPerAnalyzeBdt: 0.20,
-    costPerAiGenerateBdt: 0.10,
-    costPerBroadcastMsgBdt: 0.05,
-    costPerRecurringNotifBdt: 0.10,
-    costPerCommentReplyBdt: 0.05,
-    costPerMemoPrintBdt: 0.10,
+    costPerKeywordReplyCredit: 1,
+    costPerImageCredit: 8,
+    costPerImageLocalCredit: 4,
+    costPerOcrLocalCredit: 1,
+    costPerOcrAiCredit: 2,
+    costPerVoiceMsgCredit: 40,
+    costPerAnalyzeCredit: 8,
+    costPerAiGenerateCredit: 4,
+    costPerBroadcastMsgCredit: 2,
+    costPerRecurringNotifCredit: 4,
+    costPerCommentReplyCredit: 2,
+    costPerMemoPrintCredit: 4,
+    creditsPerBdt: 40,
   };
   const [pricingForm, setPricingForm] = useState(DEFAULT_PRICING);
   const [pricingSaving, setPricingSaving] = useState(false);
@@ -181,6 +196,17 @@ export function AdminPanel({ th, onToast, onLogout }: {
   // Subscriptions tab state
   const [subPages, setSubPages] = useState<any[]>([]);
   const [subLoading, setSubLoading] = useState(false);
+
+  // Agents tab state (admin: manage agents; agent: self-service)
+  const [agents, setAgents] = useState<any[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(false);
+  const [newAgentForm, setNewAgentForm] = useState({ username: '', password: '', name: '', commissionPercentRecharge: '', commissionPercentSubscription: '' });
+  const [myClients, setMyClients] = useState<any[]>([]);
+  const [myClientsLoading, setMyClientsLoading] = useState(false);
+  const [myProfile, setMyProfile] = useState<any>(null);
+  const [myEarnings, setMyEarnings] = useState<any[]>([]);
+  const [myPayouts, setMyPayouts] = useState<any[]>([]);
+  const [earningsLoading, setEarningsLoading] = useState(false);
 
   // Laptop AI mode state
   const [localAiMode, setLocalAiMode] = useState<'all' | 'generate_only' | 'none'>('none');
@@ -388,6 +414,81 @@ export function AdminPanel({ th, onToast, onLogout }: {
     finally { setSubLoading(false); }
   }, [BASE]);
 
+  // ── Agents (admin: manage; agent: self-service) ──────────────────────────
+  const loadAgents = useCallback(async () => {
+    setAgentsLoading(true);
+    try { setAgents(await request<any[]>(`${BASE}/agents`) || []); }
+    catch (e: any) { onToast(e.message, 'error'); }
+    finally { setAgentsLoading(false); }
+  }, [BASE]);
+
+  const createAgent = async () => {
+    if (!newAgentForm.username.trim() || !newAgentForm.password.trim()) {
+      onToast('Username ও password দিন', 'error'); return;
+    }
+    try {
+      await request(`${BASE}/agents`, {
+        method: 'POST',
+        body: JSON.stringify({
+          username: newAgentForm.username.trim(),
+          password: newAgentForm.password,
+          name: newAgentForm.name.trim() || undefined,
+          commissionPercentRecharge: newAgentForm.commissionPercentRecharge ? Number(newAgentForm.commissionPercentRecharge) : undefined,
+          commissionPercentSubscription: newAgentForm.commissionPercentSubscription ? Number(newAgentForm.commissionPercentSubscription) : undefined,
+        }),
+      });
+      onToast('✅ Agent তৈরি হয়েছে', 'success');
+      setNewAgentForm({ username: '', password: '', name: '', commissionPercentRecharge: '', commissionPercentSubscription: '' });
+      loadAgents();
+    } catch (e: any) { onToast(e.message, 'error'); }
+  };
+
+  const updateAgentRates = async (id: string, data: { commissionPercentRecharge?: number; commissionPercentSubscription?: number }) => {
+    try {
+      await request(`${BASE}/agents/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+      onToast('✅ Update হয়েছে', 'success');
+      loadAgents();
+    } catch (e: any) { onToast(e.message, 'error'); }
+  };
+
+  const toggleAgentActive = async (id: string, isActive: boolean) => {
+    try {
+      await request(`${BASE}/users/${id}/account-status`, { method: 'PATCH', body: JSON.stringify({ isActive: !isActive }) });
+      loadAgents();
+    } catch (e: any) { onToast(e.message, 'error'); }
+  };
+
+  const recordAgentPayout = async (id: string, amountBdt: number, note?: string) => {
+    if (!amountBdt || amountBdt <= 0) { onToast('সঠিক amount দিন', 'error'); return; }
+    try {
+      await request(`${BASE}/agents/${id}/payout`, { method: 'POST', body: JSON.stringify({ amountBdt, note }) });
+      onToast('✅ Payout record হয়েছে', 'success');
+      loadAgents();
+    } catch (e: any) { onToast(e.message, 'error'); }
+  };
+
+  const loadMyClients = useCallback(async () => {
+    setMyClientsLoading(true);
+    try { setMyClients(await request<any[]>(`${API_BASE}/partner/clients`) || []); }
+    catch (e: any) { onToast(e.message, 'error'); }
+    finally { setMyClientsLoading(false); }
+  }, []);
+
+  const loadMyEarnings = useCallback(async () => {
+    setEarningsLoading(true);
+    try {
+      const [profile, earnings, payouts] = await Promise.all([
+        request<any>(`${API_BASE}/partner/me`),
+        request<any>(`${API_BASE}/partner/earnings`),
+        request<any>(`${API_BASE}/partner/payouts`),
+      ]);
+      setMyProfile(profile);
+      setMyEarnings(earnings?.rows || []);
+      setMyPayouts(payouts?.rows || []);
+    } catch (e: any) { onToast(e.message, 'error'); }
+    finally { setEarningsLoading(false); }
+  }, []);
+
   const loadCustomers = useCallback(async (search = customerSearch, offset = customerOffset) => {
     setCustomersLoading(true);
     try {
@@ -434,7 +535,7 @@ export function AdminPanel({ th, onToast, onLogout }: {
 
   const directRecharge = async () => {
     const pid = Number(walletDirectForm.pageId);
-    const amt = Number(walletDirectForm.amountBdt);
+    const amt = Number(walletDirectForm.creditAmount);
     if (!pid || !amt || amt <= 0 || !walletDirectForm.transactionId.trim()) {
       onToast('Page, amount ও Transaction ID দিন', 'error'); return;
     }
@@ -443,13 +544,13 @@ export function AdminPanel({ th, onToast, onLogout }: {
       await request(`${BASE}/wallet/${pid}/recharge`, {
         method: 'POST',
         body: JSON.stringify({
-          amountBdt: amt,
+          creditAmount: amt,
           transactionId: walletDirectForm.transactionId.trim(),
           note: walletDirectForm.note.trim() || undefined,
         }),
       });
-      onToast(`✅ ৳${amt} balance যোগ হয়েছে`, 'success');
-      setWalletDirectForm({ pageId: '', amountBdt: '', transactionId: '', note: '' });
+      onToast(`✅ ${amt} credit balance যোগ হয়েছে`, 'success');
+      setWalletDirectForm({ pageId: '', creditAmount: '', transactionId: '', note: '' });
       loadWallet();
     } catch (e: any) { onToast(e.message, 'error'); }
     finally { setWalletDirectSaving(false); }
@@ -457,7 +558,7 @@ export function AdminPanel({ th, onToast, onLogout }: {
 
   const adjustWallet = async () => {
     const pid = Number(walletAdjustForm.pageId);
-    const amt = Number(walletAdjustForm.amountBdt);
+    const amt = Number(walletAdjustForm.creditAmount);
     if (!pid || !amt) {
       onToast('Page ও amount দিন (কমাতে negative number দিন, যেমন: -100)', 'error'); return;
     }
@@ -466,12 +567,12 @@ export function AdminPanel({ th, onToast, onLogout }: {
       await request(`${BASE}/wallet/${pid}/adjust`, {
         method: 'POST',
         body: JSON.stringify({
-          amountBdt: amt,
+          creditAmount: amt,
           note: walletAdjustForm.note.trim() || undefined,
         }),
       });
-      onToast(`✅ Balance ${amt > 0 ? '+' : ''}৳${amt} adjust হয়েছে`, 'success');
-      setWalletAdjustForm({ pageId: '', amountBdt: '', note: '' });
+      onToast(`✅ Balance ${amt > 0 ? '+' : ''}${amt} credit adjust হয়েছে`, 'success');
+      setWalletAdjustForm({ pageId: '', creditAmount: '', note: '' });
       loadWallet();
     } catch (e: any) { onToast(e.message, 'error'); }
     finally { setWalletAdjustSaving(false); }
@@ -481,19 +582,19 @@ export function AdminPanel({ th, onToast, onLogout }: {
     try {
       const data = await request<any>(`${BASE}/wallet/pricing/global`);
       if (data) setPricingForm({
-        costPerKeywordReplyBdt:     data.costPerKeywordReplyBdt     ?? DEFAULT_PRICING.costPerKeywordReplyBdt,
-        costPerTextMsgBdt:          data.costPerTextMsgBdt          ?? DEFAULT_PRICING.costPerTextMsgBdt,
-        costPerImageBdt:            data.costPerImageBdt            ?? DEFAULT_PRICING.costPerImageBdt,
-        costPerImageLocalBdt:       data.costPerImageLocalBdt       ?? DEFAULT_PRICING.costPerImageLocalBdt,
-        costPerOcrLocalBdt:         data.costPerOcrLocalBdt         ?? DEFAULT_PRICING.costPerOcrLocalBdt,
-        costPerOcrAiBdt:            data.costPerOcrAiBdt            ?? DEFAULT_PRICING.costPerOcrAiBdt,
-        costPerVoiceMsgBdt:         data.costPerVoiceMsgBdt         ?? DEFAULT_PRICING.costPerVoiceMsgBdt,
-        costPerAnalyzeBdt:          data.costPerAnalyzeBdt          ?? DEFAULT_PRICING.costPerAnalyzeBdt,
-        costPerAiGenerateBdt:       data.costPerAiGenerateBdt       ?? DEFAULT_PRICING.costPerAiGenerateBdt,
-        costPerBroadcastMsgBdt:     data.costPerBroadcastMsgBdt     ?? DEFAULT_PRICING.costPerBroadcastMsgBdt,
-        costPerRecurringNotifBdt:   data.costPerRecurringNotifBdt   ?? DEFAULT_PRICING.costPerRecurringNotifBdt,
-        costPerCommentReplyBdt:     data.costPerCommentReplyBdt     ?? DEFAULT_PRICING.costPerCommentReplyBdt,
-        costPerMemoPrintBdt:        data.costPerMemoPrintBdt        ?? DEFAULT_PRICING.costPerMemoPrintBdt,
+        costPerKeywordReplyCredit:  data.costPerKeywordReplyCredit  ?? DEFAULT_PRICING.costPerKeywordReplyCredit,
+        costPerImageCredit:         data.costPerImageCredit         ?? DEFAULT_PRICING.costPerImageCredit,
+        costPerImageLocalCredit:    data.costPerImageLocalCredit    ?? DEFAULT_PRICING.costPerImageLocalCredit,
+        costPerOcrLocalCredit:      data.costPerOcrLocalCredit      ?? DEFAULT_PRICING.costPerOcrLocalCredit,
+        costPerOcrAiCredit:         data.costPerOcrAiCredit         ?? DEFAULT_PRICING.costPerOcrAiCredit,
+        costPerVoiceMsgCredit:      data.costPerVoiceMsgCredit      ?? DEFAULT_PRICING.costPerVoiceMsgCredit,
+        costPerAnalyzeCredit:       data.costPerAnalyzeCredit       ?? DEFAULT_PRICING.costPerAnalyzeCredit,
+        costPerAiGenerateCredit:    data.costPerAiGenerateCredit    ?? DEFAULT_PRICING.costPerAiGenerateCredit,
+        costPerBroadcastMsgCredit:  data.costPerBroadcastMsgCredit  ?? DEFAULT_PRICING.costPerBroadcastMsgCredit,
+        costPerRecurringNotifCredit: data.costPerRecurringNotifCredit ?? DEFAULT_PRICING.costPerRecurringNotifCredit,
+        costPerCommentReplyCredit:  data.costPerCommentReplyCredit  ?? DEFAULT_PRICING.costPerCommentReplyCredit,
+        costPerMemoPrintCredit:     data.costPerMemoPrintCredit     ?? DEFAULT_PRICING.costPerMemoPrintCredit,
+        creditsPerBdt:              data.creditsPerBdt              ?? DEFAULT_PRICING.creditsPerBdt,
       });
     } catch { /* silent — fallback to defaults */ }
     try {
@@ -501,6 +602,51 @@ export function AdminPanel({ th, onToast, onLogout }: {
       if (g?.pricingInfo) setGlobalPricingInfo(g.pricingInfo);
     } catch { /* silent */ }
   }, [BASE]);
+
+  const loadCreditPackages = useCallback(async () => {
+    setPackagesLoading(true);
+    try {
+      const data = await request<any[]>(`${BASE}/wallet/packages`);
+      setCreditPackages(data || []);
+    } catch { /* silent */ }
+    finally { setPackagesLoading(false); }
+  }, [BASE]);
+
+  const createCreditPackage = async () => {
+    const priceBdt = Number(newPackageForm.priceBdt);
+    const credits = Number(newPackageForm.credits);
+    if (!priceBdt || priceBdt <= 0 || !credits || credits <= 0) {
+      onToast('Price ও credits দিন', 'error'); return;
+    }
+    try {
+      await request(`${BASE}/wallet/packages`, {
+        method: 'POST',
+        body: JSON.stringify({ name: newPackageForm.name.trim() || undefined, priceBdt, credits }),
+      });
+      onToast('✅ Package যোগ হয়েছে', 'success');
+      setNewPackageForm({ name: '', priceBdt: '', credits: '' });
+      loadCreditPackages();
+    } catch (e: any) { onToast(e.message, 'error'); }
+  };
+
+  const toggleCreditPackage = async (id: number, isActive: boolean) => {
+    try {
+      await request(`${BASE}/wallet/packages/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !isActive }),
+      });
+      loadCreditPackages();
+    } catch (e: any) { onToast(e.message, 'error'); }
+  };
+
+  const deleteCreditPackage = async (id: number) => {
+    if (!window.confirm('এই package delete করতে চান?')) return;
+    try {
+      await request(`${BASE}/wallet/packages/${id}`, { method: 'DELETE' });
+      onToast('✅ Package মুছে ফেলা হয়েছে', 'success');
+      loadCreditPackages();
+    } catch (e: any) { onToast(e.message, 'error'); }
+  };
 
   const saveGlobalPricingInfo = async () => {
     setPricingInfoSaving(true);
@@ -629,6 +775,9 @@ export function AdminPanel({ th, onToast, onLogout }: {
     if (tab === 'domain-setup') loadDomainTab();
     if (tab === 'api-keys' && !apiKeysLoaded) loadApiKeys();
     if (tab === 'reports') loadReport();
+    if (tab === 'agents') loadAgents();
+    if (tab === 'my-clients') loadMyClients();
+    if (tab === 'earnings') loadMyEarnings();
   }, [tab]);
 
   useEffect(() => {
@@ -660,7 +809,7 @@ export function AdminPanel({ th, onToast, onLogout }: {
   }, [tab]);
 
   useEffect(() => {
-    if (tab === 'pricing') loadPricing();
+    if (tab === 'pricing') { loadPricing(); loadCreditPackages(); }
   }, [tab]);
 
   const loadReport = async (month?: string) => {
@@ -919,7 +1068,9 @@ export function AdminPanel({ th, onToast, onLogout }: {
 
   // ── Tab Bar ───────────────────────────────────────────────────────────────
   const TabBar = () => {
-    const visibleTabs = secretUnlocked ? [...ADMIN_TABS, SECRET_TAB] : ADMIN_TABS;
+    const visibleTabs = isAgent
+      ? AGENT_TABS
+      : (secretUnlocked ? [...ADMIN_TABS, SECRET_TAB] : ADMIN_TABS);
     const currentTabHelp = visibleTabs.find(t => t.key === tab)?.help || '';
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 0, background: th.surface, borderRadius: 14, padding: 4, border: `1px solid ${th.border}` }}>
@@ -1962,7 +2113,7 @@ export function AdminPanel({ th, onToast, onLogout }: {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div onClick={handleSecretClick} style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg,#ef4444,#dc2626)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, cursor: 'pointer', userSelect: 'none' }}>🛡️</div>
           <div>
-            <div style={{ fontWeight: 900, fontSize: 15, letterSpacing: '-0.3px', color: '#fff' }}>Chatcat Admin</div>
+            <div style={{ fontWeight: 900, fontSize: 15, letterSpacing: '-0.3px', color: '#fff' }}>FlamboyAI Admin</div>
             <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.04em' }}>SYSTEM CONTROL PANEL</div>
           </div>
         </div>
@@ -2043,6 +2194,13 @@ export function AdminPanel({ th, onToast, onLogout }: {
             setGlobalPricingInfo={setGlobalPricingInfo}
             pricingInfoSaving={pricingInfoSaving}
             onSavePricingInfo={saveGlobalPricingInfo}
+            packages={creditPackages}
+            packagesLoading={packagesLoading}
+            newPackageForm={newPackageForm}
+            setNewPackageForm={setNewPackageForm}
+            onCreatePackage={createCreditPackage}
+            onTogglePackage={toggleCreditPackage}
+            onDeletePackage={deleteCreditPackage}
           />
         )}
         {tab === 'subscriptions' && (
@@ -2056,6 +2214,25 @@ export function AdminPanel({ th, onToast, onLogout }: {
             onToast={onToast}
             onReload={loadSubscriptions}
           />
+        )}
+        {tab === 'agents' && (
+          <AdminAgentsTab
+            th={th}
+            loading={agentsLoading}
+            agents={agents}
+            newAgentForm={newAgentForm}
+            setNewAgentForm={setNewAgentForm}
+            onCreate={createAgent}
+            onUpdateRates={updateAgentRates}
+            onToggleActive={toggleAgentActive}
+            onPayout={recordAgentPayout}
+          />
+        )}
+        {tab === 'my-clients' && (
+          <AgentClientsTab th={th} loading={myClientsLoading} clients={myClients} />
+        )}
+        {tab === 'earnings' && (
+          <AgentEarningsTab th={th} loading={earningsLoading} profile={myProfile} earnings={myEarnings} payouts={myPayouts} />
         )}
         {tab === 'page-requests' && (
           <PageRequestsTab
@@ -2134,7 +2311,7 @@ export function AdminPanel({ th, onToast, onLogout }: {
                   />
                   {domainInput && (
                     <div style={{ fontSize: 11.5, color: th.muted, marginTop: 6 }}>
-                      DNS CNAME: <span style={{ fontFamily: 'monospace', color: th.accent }}>{domainInput} → api.chatcat.pro</span>
+                      DNS CNAME: <span style={{ fontFamily: 'monospace', color: th.accent }}>{domainInput} → api.flamboyai.com</span>
                     </div>
                   )}
                 </div>
@@ -2569,7 +2746,7 @@ export function AdminPanel({ th, onToast, onLogout }: {
                   ]},
                   { group: '📧 Resend (OTP/Email)', fields: [
                     { key: 'resendApiKey', label: 'Resend API Key', secret: true, placeholder: 're_...' },
-                    { key: 'resendFromEmail', label: 'From Address', placeholder: 'ChatCat Pro <noreply@chatcat.pro>' },
+                    { key: 'resendFromEmail', label: 'From Address', placeholder: 'FlamboyAI <noreply@flamboyai.com>' },
                   ]},
                   { group: '📧 Gmail (legacy, unused)', fields: [
                     { key: 'gmailUser', label: 'Gmail Address' },
@@ -2578,7 +2755,7 @@ export function AdminPanel({ th, onToast, onLogout }: {
                   { group: '📱 Facebook OAuth (Global App)', fields: [
                     { key: 'fbAppId', label: 'FB App ID' },
                     { key: 'fbAppSecret', label: 'FB App Secret', secret: true },
-                    { key: 'fbRedirectUri', label: 'FB Redirect URI', placeholder: 'https://api.chatcat.pro/facebook/callback' },
+                    { key: 'fbRedirectUri', label: 'FB Redirect URI', placeholder: 'https://api.flamboyai.com/facebook/callback' },
                     { key: 'fbOauthStateSecret', label: 'FB OAuth State Secret', secret: true },
                   ]},
                   { group: '🖼 Image Generation', fields: [
@@ -2604,13 +2781,13 @@ export function AdminPanel({ th, onToast, onLogout }: {
                     { key: 'bdCallingCallerId', label: 'BDCalling Caller ID' },
                   ]},
                   { group: '🌐 URLs', fields: [
-                    { key: 'landingPageUrl', label: 'Landing Page URL', placeholder: 'https://chatcat.pro' },
+                    { key: 'landingPageUrl', label: 'Landing Page URL', placeholder: 'https://flamboyai.com' },
                     { key: 'catalogBaseUrl', label: 'Catalog Base URL' },
                     { key: 'storagePublicUrl', label: 'Storage Public URL' },
                     { key: 'apiBaseUrl', label: 'API Base URL' },
                   ]},
                   { group: '💬 Misc', fields: [
-                    { key: 'adminWhatsappNumber', label: 'Admin WhatsApp Number', placeholder: '01720450797' },
+                    { key: 'adminWhatsappNumber', label: 'Admin WhatsApp Number', placeholder: '01575897887' },
                   ]},
                 ] as { group: string; fields: { key: string; label: string; placeholder?: string; secret?: boolean }[] }[]
               ).map(({ group, fields }) => (
@@ -2735,7 +2912,7 @@ export function AdminPanel({ th, onToast, onLogout }: {
                               <td style={{ padding: '7px 10px', color: th.accent }}>{fmt(p.billedBdt)}</td>
                               <td style={{ padding: '7px 10px', color: '#f59e0b' }}>{fmt(p.apiCostBdt)}</td>
                               <td style={{ padding: '7px 10px', color: p.netProfitBdt >= 0 ? '#16a34a' : '#ef4444', fontWeight: 700 }}>{fmt(p.netProfitBdt)}</td>
-                              <td style={{ padding: '7px 10px', color: p.currentBalanceBdt < 50 ? '#ef4444' : th.text }}>{fmt(p.currentBalanceBdt)}</td>
+                              <td style={{ padding: '7px 10px', color: p.currentBalanceCredit < 2000 ? '#ef4444' : th.text }}>{Math.round(p.currentBalanceCredit).toLocaleString()} cr</td>
                               <td style={{ padding: '7px 10px' }}>
                                 <span style={{ fontSize: 10, fontWeight: 800, color: p.subscriptionStatus === 'ACTIVE' ? '#16a34a' : '#ef4444', background: p.subscriptionStatus === 'ACTIVE' ? '#dcfce7' : '#fee2e2', padding: '2px 7px', borderRadius: 6 }}>
                                   {p.subscriptionStatus}
@@ -3473,7 +3650,7 @@ function CourierTutorialsTab({ th, tutorials, setTutorials, saveTutorials, savin
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <div style={{ fontSize: 22 }}>🎓</div>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 14, color: '#16a34a' }}>Chatcat Onboarding</div>
+              <div style={{ fontWeight: 800, fontSize: 14, color: '#16a34a' }}>FlamboyAI Onboarding</div>
               <div style={{ fontSize: 12, color: th.muted }}>Platform কীভাবে ব্যবহার করবেন — সম্পূর্ণ guide</div>
             </div>
             {obUrl && <span style={{ ...th.pill, ...th.pillGreen, fontSize: 10, marginLeft: 'auto' }}>✓ Set</span>}
@@ -3944,15 +4121,15 @@ function AdminWalletTab({ th, loading, pages, requests, reqFilter, setReqFilter,
                 <option value="" style={{ background: th.bg, color: th.muted }}>— Page বেছে নিন —</option>
                 {pages.map(p => (
                   <option key={p.id} value={p.id} style={{ background: th.bg, color: th.text }}>
-                    {p.pageName || '(no name)'}  @{p.owner?.username || '?'}  [ID:{p.id}]  ৳{(p.walletBalanceBdt ?? 0).toFixed(2)}
+                    {p.pageName || '(no name)'}  @{p.owner?.username || '?'}  [ID:{p.id}]  {Math.round(p.creditBalance ?? 0)} credit
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <label style={{ fontSize: 11, color: th.muted, display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Amount (BDT) — negative দিলে কমবে</label>
-              <input style={{ ...inp, fontWeight: 700, fontSize: 16 }} type="number" placeholder="200 বা -100" value={adjustForm.amountBdt}
-                onChange={e => setAdjustForm({ ...adjustForm, amountBdt: e.target.value })} />
+              <label style={{ fontSize: 11, color: th.muted, display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Amount (credit) — negative দিলে কমবে</label>
+              <input style={{ ...inp, fontWeight: 700, fontSize: 16 }} type="number" placeholder="200 বা -100" value={adjustForm.creditAmount}
+                onChange={e => setAdjustForm({ ...adjustForm, creditAmount: e.target.value })} />
             </div>
             <div>
               <label style={{ fontSize: 11, color: th.muted, display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Note (optional)</label>
@@ -3989,15 +4166,15 @@ function AdminWalletTab({ th, loading, pages, requests, reqFilter, setReqFilter,
                 <option value="" style={{ background: th.bg, color: th.muted }}>— Page বেছে নিন —</option>
                 {pages.map(p => (
                   <option key={p.id} value={p.id} style={{ background: th.bg, color: th.text }}>
-                    {p.pageName || '(no name)'}  @{p.owner?.username || '?'}  [ID:{p.id}]  ৳{(p.walletBalanceBdt ?? 0).toFixed(2)}
+                    {p.pageName || '(no name)'}  @{p.owner?.username || '?'}  [ID:{p.id}]  {Math.round(p.creditBalance ?? 0)} credit
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <label style={{ fontSize: 11, color: th.muted, display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Amount (BDT)</label>
-              <input style={{ ...inp, fontWeight: 700, fontSize: 16 }} type="number" placeholder="500" value={directForm.amountBdt}
-                onChange={e => setDirectForm({ ...directForm, amountBdt: e.target.value })} />
+              <label style={{ fontSize: 11, color: th.muted, display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Amount (credit)</label>
+              <input style={{ ...inp, fontWeight: 700, fontSize: 16 }} type="number" placeholder="500" value={directForm.creditAmount}
+                onChange={e => setDirectForm({ ...directForm, creditAmount: e.target.value })} />
             </div>
             <div>
               <label style={{ fontSize: 11, color: th.muted, display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transaction ID</label>
@@ -4055,7 +4232,7 @@ function AdminWalletTab({ th, loading, pages, requests, reqFilter, setReqFilter,
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>
-                      ৳ {r.amountBdt.toLocaleString()} — {METHOD_LABELS[r.method] || r.method}
+                      ৳ {r.amountBdt.toLocaleString()} → {Math.round(r.creditsAmount ?? 0).toLocaleString()} credit — {METHOD_LABELS[r.method] || r.method}
                     </div>
                     <div style={{ fontSize: 12, color: th.muted }}>
                       <b>{r.page?.pageName || `Page #${r.pageId}`}</b>
@@ -4106,7 +4283,7 @@ function AdminWalletTab({ th, loading, pages, requests, reqFilter, setReqFilter,
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {Object.values(groupedByUser).map((group: any) => {
-            const totalBalance = group.pages.reduce((s: number, p: any) => s + p.walletBalanceBdt, 0);
+            const totalBalance = group.pages.reduce((s: number, p: any) => s + p.creditBalance, 0);
             return (
               <div key={group.owner?.id || 'unknown'} style={{ border: `1px solid ${th.border}`, borderRadius: 12, overflow: 'hidden' }}>
                 {/* User header */}
@@ -4117,8 +4294,8 @@ function AdminWalletTab({ th, loading, pages, requests, reqFilter, setReqFilter,
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 11, color: th.muted }}>{group.pages.length}টি page</span>
-                    <span style={{ fontWeight: 800, fontSize: 14, color: totalBalance <= 0 ? '#ef4444' : totalBalance < 100 ? '#f59e0b' : '#22c55e' }}>
-                      মোট ৳ {totalBalance.toFixed(2)}
+                    <span style={{ fontWeight: 800, fontSize: 14, color: totalBalance <= 0 ? '#ef4444' : totalBalance < 4000 ? '#f59e0b' : '#22c55e' }}>
+                      মোট {Math.round(totalBalance).toLocaleString()} credit
                     </span>
                   </div>
                 </div>
@@ -4127,8 +4304,8 @@ function AdminWalletTab({ th, loading, pages, requests, reqFilter, setReqFilter,
                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px 8px 24px', borderTop: `1px solid ${th.border}` }}>
                     <div style={{ fontSize: 12, color: th.text }}>{p.pageName || p.pageId}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 13, color: p.walletBalanceBdt <= 0 ? '#ef4444' : p.walletBalanceBdt < 100 ? '#f59e0b' : '#22c55e' }}>
-                        ৳ {p.walletBalanceBdt.toFixed(2)}
+                      <span style={{ fontWeight: 700, fontSize: 13, color: p.creditBalance <= 0 ? '#ef4444' : p.creditBalance < 4000 ? '#f59e0b' : '#22c55e' }}>
+                        {Math.round(p.creditBalance).toLocaleString()} credit
                       </span>
                       <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 99, fontWeight: 700, background: p.subscriptionStatus === 'ACTIVE' ? '#22c55e22' : '#ef444422', color: p.subscriptionStatus === 'ACTIVE' ? '#16a34a' : '#dc2626' }}>
                         {p.subscriptionStatus}
@@ -4147,38 +4324,38 @@ function AdminWalletTab({ th, loading, pages, requests, reqFilter, setReqFilter,
 
 // ── Admin Pricing Tab ─────────────────────────────────────────────────────────
 type PricingForm = {
-  costPerKeywordReplyBdt: number;
-  costPerTextMsgBdt: number;
-  costPerImageBdt: number;
-  costPerImageLocalBdt: number;
-  costPerOcrLocalBdt: number;
-  costPerOcrAiBdt: number;
-  costPerVoiceMsgBdt: number;
-  costPerAnalyzeBdt: number;
-  costPerAiGenerateBdt: number;
-  costPerBroadcastMsgBdt: number;
-  costPerRecurringNotifBdt: number;
-  costPerCommentReplyBdt: number;
-  costPerMemoPrintBdt: number;
+  costPerKeywordReplyCredit: number;
+  costPerImageCredit: number;
+  costPerImageLocalCredit: number;
+  costPerOcrLocalCredit: number;
+  costPerOcrAiCredit: number;
+  costPerVoiceMsgCredit: number;
+  costPerAnalyzeCredit: number;
+  costPerAiGenerateCredit: number;
+  costPerBroadcastMsgCredit: number;
+  costPerRecurringNotifCredit: number;
+  costPerCommentReplyCredit: number;
+  costPerMemoPrintCredit: number;
+  creditsPerBdt: number;
 };
 
 const PRICING_FIELDS: { key: keyof PricingForm; label: string; help: string }[] = [
-  { key: 'costPerKeywordReplyBdt',   label: 'Keyword/Template Reply (৳)',    help: 'Pure keyword/rule-based reply — AI call নেই' },
-  { key: 'costPerTextMsgBdt',        label: 'AI Text Reply (৳)',             help: 'প্রতিটি AI text message reply এর charge' },
-  { key: 'costPerImageBdt',          label: 'Customer Image — Vision (৳)',   help: 'Gemini Vision API দিয়ে customer image analyze' },
-  { key: 'costPerImageLocalBdt',     label: 'Customer Image — Local (৳)',    help: 'Local CLIP model দিয়ে customer image search' },
-  { key: 'costPerOcrLocalBdt',       label: 'OCR — Local Tesseract (৳)',     help: 'Local Tesseract দিয়ে image থেকে text extract' },
-  { key: 'costPerOcrAiBdt',          label: 'OCR — AI Gemini Fallback (৳)', help: 'Gemini Flash দিয়ে OCR fallback — বেশি accurate' },
-  { key: 'costPerVoiceMsgBdt',       label: 'Voice Note STT (৳)',            help: 'OpenAI Whisper দিয়ে voice → text, actual cost ~৳0.39–0.78/msg' },
-  { key: 'costPerAnalyzeBdt',        label: 'Product Auto-Analyze (৳)',      help: 'Admin product upload এ vision analysis' },
-  { key: 'costPerAiGenerateBdt',     label: 'AI Generate (Caption/Desc) (৳)', help: 'AI দিয়ে product description বা broadcast message তৈরি' },
-  { key: 'costPerBroadcastMsgBdt',   label: 'Broadcast Message (৳)',         help: 'প্রতিটি broadcast message পাঠানোর charge' },
-  { key: 'costPerRecurringNotifBdt', label: 'Subscriber Notification (৳)',   help: 'Recurring subscriber দের offer/product broadcast — Facebook free, আমাদের charge' },
-  { key: 'costPerCommentReplyBdt',   label: 'Comment Reply (৳)',             help: 'Facebook post comment এ auto-reply' },
-  { key: 'costPerMemoPrintBdt',      label: 'Memo Print (৳)',                help: 'প্রতিটি invoice/memo print এর charge' },
+  { key: 'costPerKeywordReplyCredit',   label: 'Keyword/Template Reply (credit)',    help: 'Pure keyword/rule-based reply — AI call নেই' },
+  { key: 'costPerImageCredit',          label: 'Customer Image — Vision (credit)',   help: 'Gemini Vision API দিয়ে customer image analyze' },
+  { key: 'costPerImageLocalCredit',     label: 'Customer Image — Local (credit)',    help: 'Local CLIP model দিয়ে customer image search' },
+  { key: 'costPerOcrLocalCredit',       label: 'OCR — Local Tesseract (credit)',     help: 'Local Tesseract দিয়ে image থেকে text extract' },
+  { key: 'costPerOcrAiCredit',          label: 'OCR — AI Gemini Fallback (credit)', help: 'Gemini Flash দিয়ে OCR fallback — বেশি accurate' },
+  { key: 'costPerVoiceMsgCredit',       label: 'Voice Note STT (credit)',            help: 'OpenAI Whisper দিয়ে voice → text' },
+  { key: 'costPerAnalyzeCredit',        label: 'Product Auto-Analyze (credit)',      help: 'Admin product upload এ vision analysis' },
+  { key: 'costPerAiGenerateCredit',     label: 'AI Generate (Caption/Desc) (credit)', help: 'AI দিয়ে product description বা broadcast message তৈরি' },
+  { key: 'costPerBroadcastMsgCredit',   label: 'Broadcast Message (credit)',         help: 'প্রতিটি broadcast message পাঠানোর charge' },
+  { key: 'costPerRecurringNotifCredit', label: 'Subscriber Notification (credit)',   help: 'Recurring subscriber দের offer/product broadcast — Facebook free, আমাদের charge' },
+  { key: 'costPerCommentReplyCredit',   label: 'Comment Reply (credit)',             help: 'Facebook post comment এ auto-reply' },
+  { key: 'costPerMemoPrintCredit',      label: 'Memo Print (credit)',                help: 'প্রতিটি invoice/memo print এর charge' },
+  { key: 'creditsPerBdt',               label: 'Custom Recharge Rate (credit per ৳)', help: 'Package ছাড়া custom BDT amount দিয়ে recharge করলে এই rate ব্যবহার হবে' },
 ];
 
-function AdminPricingTab({ th, form, setForm, saving, onSaveDefault, onApplyAll, globalPricingInfo, setGlobalPricingInfo, pricingInfoSaving, onSavePricingInfo }: {
+function AdminPricingTab({ th, form, setForm, saving, onSaveDefault, onApplyAll, globalPricingInfo, setGlobalPricingInfo, pricingInfoSaving, onSavePricingInfo, packages, packagesLoading, newPackageForm, setNewPackageForm, onCreatePackage, onTogglePackage, onDeletePackage }: {
   th: Theme;
   form: PricingForm;
   setForm: (v: PricingForm | ((p: PricingForm) => PricingForm)) => void;
@@ -4189,6 +4366,13 @@ function AdminPricingTab({ th, form, setForm, saving, onSaveDefault, onApplyAll,
   setGlobalPricingInfo: (v: string) => void;
   pricingInfoSaving: boolean;
   onSavePricingInfo: () => void;
+  packages: any[];
+  packagesLoading: boolean;
+  newPackageForm: { name: string; priceBdt: string; credits: string };
+  setNewPackageForm: (v: any) => void;
+  onCreatePackage: () => void;
+  onTogglePackage: (id: number, isActive: boolean) => void;
+  onDeletePackage: (id: number) => void;
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 520 }}>
@@ -4204,7 +4388,7 @@ function AdminPricingTab({ th, form, setForm, saving, onSaveDefault, onApplyAll,
               <input
                 type="number"
                 min={0}
-                step={0.01}
+                step={1}
                 style={{ ...th.input, width: '100%' }}
                 value={form[key]}
                 onChange={e => setForm((p: PricingForm) => ({ ...p, [key]: parseFloat(e.target.value) || 0 }))}
@@ -4262,30 +4446,64 @@ function AdminPricingTab({ th, form, setForm, saving, onSaveDefault, onApplyAll,
       </div>
 
       <div style={{ ...th.card }}>
-        <CardHeader th={th} title="Default Rates (Reference)" sub="Recommended rates — actual API cost vs charge" />
+        <CardHeader th={th} title="AI Text / SmartBot Reply — Fixed Tier" sub="Global, character-count based — এখানে editable না (code-এ hardcoded)" />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
           {[
-            { label: 'Keyword Reply', value: '৳0.02', cost: '~৳0.001' },
-            { label: 'AI Text Reply', value: '৳0.05', cost: '~৳0.018' },
-            { label: 'Customer Image (Vision)', value: '৳0.20', cost: '~৳0.052' },
-            { label: 'OCR — Local', value: '৳0.02', cost: '~৳0.001' },
-            { label: 'OCR — AI Gemini', value: '৳0.05', cost: '~৳0.006' },
-            { label: 'Voice Note (STT)', value: '৳1.00', cost: '~৳0.39–0.78 ⚠️' },
-            { label: 'Product Analyze', value: '৳0.20', cost: '~৳0.052' },
-            { label: 'Broadcast/msg', value: '৳0.05', cost: '~৳0' },
-            { label: 'Subscriber Notif', value: '৳0.10', cost: '~৳0' },
-            { label: 'Comment Reply', value: '৳0.05', cost: '~৳0.018' },
-            { label: 'Memo Print', value: '৳0.10', cost: '~৳0.001' },
-          ].map(({ label, value, cost }) => (
+            { label: '0 – 3,000 characters', value: '10 credit' },
+            { label: '3,001 – 5,000 characters', value: '11 credit' },
+            { label: '5,001 – 7,000 characters', value: '12 credit' },
+            { label: '7,001 – 9,000 characters', value: '13 credit' },
+            { label: 'এরপর প্রতি +2,000 characters', value: '+1 credit' },
+          ].map(({ label, value }) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, padding: '4px 0', borderBottom: `1px solid ${th.border}` }}>
               <span style={{ color: th.muted }}>{label}</span>
-              <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ color: th.muted, fontSize: 11 }}>cost: {cost}</span>
-                <span style={{ color: th.text, fontWeight: 700 }}>{value}</span>
-              </span>
+              <span style={{ color: th.text, fontWeight: 700 }}>{value}</span>
             </div>
           ))}
         </div>
+        <div style={{ marginTop: 12, fontSize: 11.5, color: th.muted, lineHeight: 1.6 }}>
+          Character count = AI-কে পাঠানো system prompt (product name+description soho) + customer message + AI reply — সব মিলিয়ে।
+        </div>
+      </div>
+
+      <div style={{ ...th.card }}>
+        <CardHeader th={th} title="💳 Credit Packages" sub="Page owner রা এই fixed package গুলো কিনে recharge করতে পারবে" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+          {packagesLoading ? (
+            <div style={{ textAlign: 'center', padding: 16 }}><Spinner size={18} /></div>
+          ) : packages.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: th.muted, textAlign: 'center', padding: 12 }}>কোনো package নেই — নিচে থেকে যোগ করুন।</div>
+          ) : packages.map((pkg: any) => (
+            <div key={pkg.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 8, border: `1px solid ${th.border}`, opacity: pkg.isActive ? 1 : 0.5 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{pkg.name || `Package #${pkg.id}`}</div>
+                <div style={{ fontSize: 12, color: th.muted }}>৳{pkg.priceBdt.toLocaleString()} → {pkg.credits.toLocaleString()} credit</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={() => onTogglePackage(pkg.id, pkg.isActive)}
+                  style={{ padding: '5px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1px solid ${th.border}`, background: 'transparent', color: th.text, cursor: 'pointer' }}
+                >{pkg.isActive ? 'Deactivate' : 'Activate'}</button>
+                <button
+                  onClick={() => onDeletePackage(pkg.id)}
+                  style={{ padding: '5px 10px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: '1px solid #ef444455', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}
+                >Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 14 }}>
+          <input placeholder="Name (optional)" style={{ ...th.input }} value={newPackageForm.name}
+            onChange={e => setNewPackageForm((p: any) => ({ ...p, name: e.target.value }))} />
+          <input placeholder="৳ Price" type="number" style={{ ...th.input }} value={newPackageForm.priceBdt}
+            onChange={e => setNewPackageForm((p: any) => ({ ...p, priceBdt: e.target.value }))} />
+          <input placeholder="Credits" type="number" style={{ ...th.input }} value={newPackageForm.credits}
+            onChange={e => setNewPackageForm((p: any) => ({ ...p, credits: e.target.value }))} />
+        </div>
+        <button
+          onClick={onCreatePackage}
+          style={{ marginTop: 10, width: '100%', padding: '10px 0', background: th.accent, color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+        >+ Package যোগ করুন</button>
       </div>
 
       {/* Bot Pricing Info */}
@@ -4493,6 +4711,232 @@ function AdminSubscriptionsTab({ th, loading, pages, onRefresh, BASE, request, o
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ── Admin Agents Tab (create/manage resellers, set commission, record payouts) ──
+function AdminAgentsTab({ th, loading, agents, newAgentForm, setNewAgentForm, onCreate, onUpdateRates, onToggleActive, onPayout }: {
+  th: Theme; loading: boolean; agents: any[];
+  newAgentForm: { username: string; password: string; name: string; commissionPercentRecharge: string; commissionPercentSubscription: string };
+  setNewAgentForm: (v: any) => void;
+  onCreate: () => void;
+  onUpdateRates: (id: string, data: { commissionPercentRecharge?: number; commissionPercentSubscription?: number }) => void;
+  onToggleActive: (id: string, isActive: boolean) => void;
+  onPayout: (id: string, amountBdt: number, note?: string) => void;
+}) {
+  const [rateEdits, setRateEdits] = useState<Record<string, { recharge: string; subscription: string }>>({});
+  const [payoutForms, setPayoutForms] = useState<Record<string, { amount: string; note: string }>>({});
+
+  const getRates = (a: any) => rateEdits[a.id] || {
+    recharge: a.commissionPercentRecharge != null ? String(a.commissionPercentRecharge) : '',
+    subscription: a.commissionPercentSubscription != null ? String(a.commissionPercentSubscription) : '',
+  };
+  const getPayoutForm = (id: string) => payoutForms[id] || { amount: '', note: '' };
+
+  const card: React.CSSProperties = { ...th.card, borderRadius: 14, padding: 20, marginBottom: 16 };
+  const inp: React.CSSProperties = { ...th.input, width: '100%', boxSizing: 'border-box' };
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div style={card}>
+        <CardHeader th={th} title="➕ নতুন Agent তৈরি করুন" sub="Agent তাদের referral link দিয়ে client onboard করবে এবং recharge/platform-fee-এর উপর commission পাবে" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
+          <input style={inp} placeholder="Username" value={newAgentForm.username}
+            onChange={e => setNewAgentForm((f: any) => ({ ...f, username: e.target.value }))} />
+          <input style={inp} placeholder="Password" type="password" value={newAgentForm.password}
+            onChange={e => setNewAgentForm((f: any) => ({ ...f, password: e.target.value }))} />
+          <input style={inp} placeholder="Name (optional)" value={newAgentForm.name}
+            onChange={e => setNewAgentForm((f: any) => ({ ...f, name: e.target.value }))} />
+          <div />
+          <input style={inp} placeholder="Recharge commission %" type="number" value={newAgentForm.commissionPercentRecharge}
+            onChange={e => setNewAgentForm((f: any) => ({ ...f, commissionPercentRecharge: e.target.value }))} />
+          <input style={inp} placeholder="Platform fee commission %" type="number" value={newAgentForm.commissionPercentSubscription}
+            onChange={e => setNewAgentForm((f: any) => ({ ...f, commissionPercentSubscription: e.target.value }))} />
+        </div>
+        <button style={{ ...th.btnPrimary, marginTop: 14, padding: '10px 20px' }} onClick={onCreate}>+ Agent তৈরি করুন</button>
+      </div>
+
+      <div style={card}>
+        <CardHeader th={th} title="🤝 সব Agent" sub={`মোট ${agents.length} জন agent`} />
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><Spinner size={20} /></div>
+        ) : agents.length === 0 ? (
+          <div style={{ textAlign: 'center', color: th.muted, padding: 24, fontSize: 13 }}>কোনো agent নেই।</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+            {agents.map((a: any) => {
+              const rates = getRates(a);
+              const pf = getPayoutForm(a.id);
+              return (
+                <div key={a.id} style={{ border: `1px solid ${th.border}`, borderRadius: 12, padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 14 }}>
+                        {a.name || a.username} <span style={{ fontSize: 11, color: th.muted, fontWeight: 500 }}>@{a.username}</span>
+                        {!a.isActive && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#ef4444', background: '#ef444422', padding: '2px 7px', borderRadius: 6 }}>SUSPENDED</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: th.muted, marginTop: 2 }}>
+                        Referral code: <b>{a.referralCode}</b> · {a.clientCount} client
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
+                      <div><span style={{ color: th.muted }}>Earned:</span> <b>৳{a.lifetimeEarnedBdt.toFixed(2)}</b></div>
+                      <div><span style={{ color: th.muted }}>Paid:</span> <b>৳{a.lifetimePaidBdt.toFixed(2)}</b></div>
+                      <div><span style={{ color: th.muted }}>Owed:</span> <b style={{ color: a.owedBalanceBdt > 0 ? '#16a34a' : th.text }}>৳{a.owedBalanceBdt.toFixed(2)}</b></div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 10, color: th.muted, textTransform: 'uppercase' }}>Recharge %</label>
+                      <input style={inp} type="number" value={rates.recharge}
+                        onChange={e => setRateEdits(prev => ({ ...prev, [a.id]: { ...rates, recharge: e.target.value } }))}
+                        onBlur={() => onUpdateRates(a.id, { commissionPercentRecharge: Number(rates.recharge) || 0 })} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 10, color: th.muted, textTransform: 'uppercase' }}>Platform Fee %</label>
+                      <input style={inp} type="number" value={rates.subscription}
+                        onChange={e => setRateEdits(prev => ({ ...prev, [a.id]: { ...rates, subscription: e.target.value } }))}
+                        onBlur={() => onUpdateRates(a.id, { commissionPercentSubscription: Number(rates.subscription) || 0 })} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <button
+                        onClick={() => onToggleActive(a.id, a.isActive)}
+                        style={{ padding: '8px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1px solid ${th.border}`, background: 'transparent', color: th.text, cursor: 'pointer', width: '100%' }}
+                      >{a.isActive ? 'Suspend' : 'Activate'}</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input style={{ ...inp, width: 120 }} placeholder="৳ Amount" type="number" value={pf.amount}
+                      onChange={e => setPayoutForms(prev => ({ ...prev, [a.id]: { ...pf, amount: e.target.value } }))} />
+                    <input style={{ ...inp, width: 200 }} placeholder="Note (optional)" value={pf.note}
+                      onChange={e => setPayoutForms(prev => ({ ...prev, [a.id]: { ...pf, note: e.target.value } }))} />
+                    <button
+                      onClick={() => onPayout(a.id, Number(pf.amount), pf.note)}
+                      style={{ padding: '8px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: 'none', background: th.accent, color: '#fff', cursor: 'pointer' }}
+                    >💸 Record Payout</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Agent Self-Service: My Clients Tab ───────────────────────────────────────
+function AgentClientsTab({ th, loading, clients }: { th: Theme; loading: boolean; clients: any[] }) {
+  const card: React.CSSProperties = { ...th.card, borderRadius: 14, padding: 20 };
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div style={card}>
+        <CardHeader th={th} title="👥 আমার Clients" sub="আপনার referral link দিয়ে signup করা client এবং তাদের page" />
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><Spinner size={20} /></div>
+        ) : clients.length === 0 ? (
+          <div style={{ textAlign: 'center', color: th.muted, padding: 24, fontSize: 13 }}>এখনো কোনো client নেই — নিচের referral link share করুন।</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+            {clients.map((c: any) => (
+              <div key={c.id} style={{ border: `1px solid ${th.border}`, borderRadius: 12, padding: '12px 16px' }}>
+                <div style={{ fontWeight: 800, fontSize: 14 }}>
+                  {c.name || c.username} <span style={{ fontSize: 11, color: th.muted, fontWeight: 500 }}>@{c.username}</span>
+                  {!c.isActive && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#ef4444' }}>INACTIVE</span>}
+                </div>
+                {c.pages.length === 0 ? (
+                  <div style={{ fontSize: 12, color: th.muted, marginTop: 4 }}>এখনো কোনো page connect করেনি।</div>
+                ) : c.pages.map((p: any) => (
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginTop: 6, padding: '6px 0', borderTop: `1px solid ${th.border}` }}>
+                    <span>{p.pageName || p.pageId}</span>
+                    <span style={{ color: th.muted }}>{p.subscriptionStatus} · {Math.round(p.creditBalance)} credit</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Agent Self-Service: Earnings Tab ─────────────────────────────────────────
+function AgentEarningsTab({ th, loading, profile, earnings, payouts }: {
+  th: Theme; loading: boolean; profile: any; earnings: any[]; payouts: any[];
+}) {
+  const [copied, setCopied] = useState(false);
+  const card: React.CSSProperties = { ...th.card, borderRadius: 14, padding: 20, marginBottom: 16 };
+
+  const copyLink = () => {
+    if (!profile?.referralLink) return;
+    navigator.clipboard.writeText(profile.referralLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (loading || !profile) return <div style={{ textAlign: 'center', padding: 40 }}><Spinner size={22} /></div>;
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ ...card, background: 'linear-gradient(135deg,#1e3a5f,#1d4ed8)', color: '#fff' }}>
+        <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 6 }}>💰 Owed Balance</div>
+        <div style={{ fontSize: 36, fontWeight: 900 }}>৳{profile.owedBalanceBdt.toFixed(2)}</div>
+        <div style={{ display: 'flex', gap: 20, marginTop: 10, fontSize: 12, opacity: 0.9 }}>
+          <div>Lifetime Earned: ৳{profile.lifetimeEarnedBdt.toFixed(2)}</div>
+          <div>Lifetime Paid: ৳{profile.lifetimePaidBdt.toFixed(2)}</div>
+          <div>Clients: {profile.clientCount}</div>
+        </div>
+      </div>
+
+      <div style={card}>
+        <CardHeader th={th} title="🔗 আমার Referral Link" sub="এই link দিয়ে signup করলে client automatically আপনার account-এ যুক্ত হবে" />
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <code style={{ ...th.input, flex: 1, minWidth: 220, padding: '10px 14px', fontSize: 12.5, overflow: 'auto', whiteSpace: 'nowrap' }}>
+            {profile.referralLink || '—'}
+          </code>
+          <button onClick={copyLink} style={{ padding: '10px 18px', fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: 'none', background: copied ? '#16a34a' : th.accent, color: '#fff', cursor: 'pointer' }}>
+            {copied ? '✓ Copied!' : '📋 Copy'}
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 20, marginTop: 14, fontSize: 12.5 }}>
+          <div><span style={{ color: th.muted }}>Recharge commission:</span> <b>{profile.commissionPercentRecharge ?? 0}%</b></div>
+          <div><span style={{ color: th.muted }}>Platform fee commission:</span> <b>{profile.commissionPercentSubscription ?? 0}%</b></div>
+        </div>
+      </div>
+
+      <div style={card}>
+        <CardHeader th={th} title="📜 Earnings History" sub={`সর্বশেষ ${earnings.length} টি`} />
+        {earnings.length === 0 ? (
+          <div style={{ textAlign: 'center', color: th.muted, padding: 20, fontSize: 13 }}>কোনো earning নেই।</div>
+        ) : (
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {earnings.map((e: any) => (
+              <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '8px 12px', borderRadius: 8, background: 'rgba(34,197,94,0.08)' }}>
+                <span>{e.sourceType === 'RECHARGE' ? '💳 Recharge' : '📅 Platform Fee'} · ৳{e.grossAmountBdt} × {e.commissionPercent}%</span>
+                <span style={{ fontWeight: 700, color: '#16a34a' }}>+৳{e.commissionAmountBdt.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={card}>
+        <CardHeader th={th} title="💸 Payout History" sub={`সর্বশেষ ${payouts.length} টি`} />
+        {payouts.length === 0 ? (
+          <div style={{ textAlign: 'center', color: th.muted, padding: 20, fontSize: 13 }}>এখনো কোনো payout হয়নি।</div>
+        ) : (
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {payouts.map((p: any) => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '8px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
+                <span>{p.note || 'Payout'} · {new Date(p.createdAt).toLocaleDateString('en-BD')}</span>
+                <span style={{ fontWeight: 700 }}>৳{p.amountBdt.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4825,7 +5269,7 @@ function AdminPaymentSetup({ th, cfg, setCfg, activeTab, setActiveTab, smsLog, a
       {activeTab === 'sms' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: '#8b5cf618', border: '1px solid #8b5cf640', borderRadius: 10, padding: 12, fontSize: 13, color: th.text }}>
-            📲 আপনার ফোনে ChatCat PaySync app install করুন → Secret Token দিয়ে connect করুন → আপনার bKash/Nagad/Rocket-এ payment এলে bot auto-verify করবে।
+            📲 আপনার ফোনে FlamboyAI PaySync app install করুন → Secret Token দিয়ে connect করুন → আপনার bKash/Nagad/Rocket-এ payment এলে bot auto-verify করবে।
           </div>
 
           {/* Step 1 — Download App */}
@@ -4838,7 +5282,7 @@ function AdminPaymentSetup({ th, cfg, setCfg, activeTab, setActiveTab, smsLog, a
               ⚠️ এই app গুলো Google Play Store-এ নেই। GitHub থেকে APK download করে install করুন। Install-এর সময় "Unknown Sources" allow করুন।
             </div>
             {[
-              { name: 'ChatCat PaySync', badge: '⭐ Official (Recommended)', badgeColor: '#10b981', desc: 'ChatCat-এর নিজস্ব app। সবচেয়ে সহজ।', url: `${API_BASE}/storage/downloads/chatcat-paysync.apk`, btn: '⬇ APK Download', btnColor: '#10b981' },
+              { name: 'FlamboyAI PaySync', badge: '⭐ Official (Recommended)', badgeColor: '#10b981', desc: 'FlamboyAI-এর নিজস্ব app। সবচেয়ে সহজ।', url: `${API_BASE}/storage/downloads/FlamboyAI-paysync.apk`, btn: '⬇ APK Download', btnColor: '#10b981' },
             ].map(app => (
               <div key={app.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, background: th.surface, border: `1px solid ${th.border}`, marginBottom: 6 }}>
                 <div style={{ flex: 1 }}>

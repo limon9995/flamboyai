@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="pro.chatcat.paysync">
+    package="pro.FlamboyAI.paysync">
 
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
@@ -20,7 +20,7 @@
     <application
         android:allowBackup="true"
         android:icon="@drawable/app_logo"
-        android:label="ChatCat PaySync"
+        android:label="FlamboyAI PaySync"
         android:supportsRtl="true"
         android:theme="@style/Theme.PaySync"
         android:usesCleartextTraffic="true">
@@ -62,7 +62,7 @@
         <!-- Notification Listener — reads SMS notifications -->
         <service
             android:name=".SmsNotificationListener"
-            android:label="ChatCat PaySync"
+            android:label="FlamboyAI PaySync"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true">
             <intent-filter>

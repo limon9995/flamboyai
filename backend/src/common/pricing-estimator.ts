@@ -1,4 +1,4 @@
-// Deterministic AI-wallet cost estimator — used by ChatCat's own sales bots
+// Deterministic AI-wallet cost estimator — used by FlamboyAI's own sales bots
 // (Facebook Page + website chat widget) so pricing answers are computed by
 // real code instead of an LLM guessing arithmetic.
 

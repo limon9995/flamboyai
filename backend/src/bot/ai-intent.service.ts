@@ -469,7 +469,9 @@ export class AiIntentService {
         }
       }
 
-      await this.walletService.deductUsage(pageId, 'TEXT', { provider: resolved.usedProvider });
+      const systemPromptText = String(messages[0]?.content ?? '');
+      const charCount = systemPromptText.length + text.length + (reply?.length ?? 0);
+      await this.walletService.deductUsage(pageId, 'TEXT', { provider: resolved.usedProvider, charCount });
       this.recordAiUsage(pageId, resolved.usage);
       this.logger.log(
         `[AiIntent] intent=${intent} reply="${reply?.slice(0, 60) ?? 'none'}"`,
@@ -544,12 +546,14 @@ export class AiIntentService {
       }
 
       this.failCount = 0;
-      await this.walletService.deductUsage(pageId, 'TEXT', { provider: resolved.usedProvider });
+      const replyText = (parsed?.reply ?? '').trim();
+      const draftCharCount = String(messages[0]?.content ?? '').length + text.length + replyText.length;
+      await this.walletService.deductUsage(pageId, 'TEXT', { provider: resolved.usedProvider, charCount: draftCharCount });
       this.recordAiUsage(pageId, resolved.usage);
       this.logger.log(`[AiIntent] draft action=${action}`);
       return {
         action: action as DraftStepReviewResult['action'],
-        reply: (parsed?.reply ?? '').trim() || null,
+        reply: replyText || null,
         normalizedValue: (parsed?.normalizedValue ?? '').trim() || null,
       };
     } catch (err: any) {
@@ -633,7 +637,9 @@ Rules:
           ? variantsSummaryText(variants, '৳')
           : `৳${p.price}`;
         const inStock = (p as any).trackStock === false || p.stockQty > 0;
-        return `- ${p.name}: ${priceTxt} | ${inStock ? 'Stock আছে' : 'Stock নেই'}${offerNote(p)}`;
+        const desc = String((p as any).description || '').trim();
+        const descLine = desc ? ` | বিবরণ: ${desc}` : '';
+        return `- ${p.name}: ${priceTxt} | ${inStock ? 'Stock আছে' : 'Stock নেই'}${offerNote(p)}${descLine}`;
       })
       .join('\n');
     const productCtx =

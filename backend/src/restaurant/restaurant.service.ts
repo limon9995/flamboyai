@@ -558,12 +558,18 @@ export class RestaurantService {
     const orderInterval = Math.round(Number(body?.orderInterval));
     if (!Number.isFinite(orderInterval) || orderInterval < 2 || orderInterval > 100)
       throw new BadRequestException('অর্ডার সংখ্যা ২-১০০ এর মধ্যে দিন');
-    const rewardType = body?.rewardType === 'FREE_DELIVERY' ? 'FREE_DELIVERY' : 'FREE_ITEM';
+    const rewardType =
+      body?.rewardType === 'FREE_DELIVERY' ? 'FREE_DELIVERY'
+      : body?.rewardType === 'DISCOUNT' ? 'DISCOUNT'
+      : 'FREE_ITEM';
     const qty = Math.max(1, Math.round(Number(body?.qty)) || 1);
     const productId = rewardType === 'FREE_ITEM' ? Number(body?.productId) || null : null;
     if (rewardType === 'FREE_ITEM' && !productId)
       throw new BadRequestException('কোন item free দেবেন সেটা বেছে নিন');
-    return { orderInterval, rewardType, qty, productId };
+    const discountPercent = rewardType === 'DISCOUNT' ? Number(body?.discountPercent) || null : null;
+    if (rewardType === 'DISCOUNT' && (!discountPercent || discountPercent <= 0 || discountPercent > 100))
+      throw new BadRequestException('ছাড়ের পরিমাণ ১-১০০% এর মধ্যে দিন');
+    return { orderInterval, rewardType, qty, productId, discountPercent };
   }
 
   async createMilestone(pageId: number, body: any) {

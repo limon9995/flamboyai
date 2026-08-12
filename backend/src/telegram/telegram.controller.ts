@@ -76,8 +76,8 @@ const MERCHANT_BUTTON_COMMANDS: Record<string, string> = Object.fromEntries(
   MERCHANT_BUTTONS.flat().map((b) => [b.label, b.cmd]),
 );
 
-/** Format a BDT amount — whole numbers stay whole, fractions keep 2 digits. */
-function fmtBdt(n: number): string {
+/** Format a number (BDT or credit) — whole numbers stay whole, fractions keep 2 digits. */
+function fmtNum(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
@@ -177,7 +177,7 @@ export class TelegramController {
       return { ok: false, error: 'token and pageId required' };
     }
     const encryptedToken = this.encryption.encrypt(body.token.trim());
-    const baseUrl = (body.baseUrl ?? 'https://api.chatcat.pro').replace(
+    const baseUrl = (body.baseUrl ?? 'https://api.flamboyai.com').replace(
       /\/$/,
       '',
     );
@@ -197,7 +197,7 @@ export class TelegramController {
     const token = this.adminTelegram.getAdminBotToken();
     if (!token)
       return { ok: false, error: 'No admin telegramBotToken configured' };
-    const baseUrl = (body?.baseUrl ?? 'https://api.chatcat.pro').replace(
+    const baseUrl = (body?.baseUrl ?? 'https://api.flamboyai.com').replace(
       /\/$/,
       '',
     );
@@ -448,7 +448,7 @@ export class TelegramController {
   private async sendAdminHelp(): Promise<void> {
     await this.adminTelegram.sendMessageWithKeyboard(
       [
-        '🛠 <b>ChatCat Admin Panel</b>',
+        '🛠 <b>FlamboyAI Admin Panel</b>',
         '',
         'নিচের permanent বাটন থেকে এক চাপে সব কাজ করা যায়। Command-ও চলে:',
         '',
@@ -461,8 +461,8 @@ export class TelegramController {
         '/unban <code>&lt;username&gt;</code> — user login চালু',
         '/recharges — pending recharge request (approve/reject button সহ)',
         '/pagerequests — pending page connect request (approve/reject সহ)',
-        '/addbalance <code>&lt;pageId&gt; &lt;amount&gt; [note]</code> — wallet-এ টাকা যোগ',
-        '/cutbalance <code>&lt;pageId&gt; &lt;amount&gt; [note]</code> — wallet থেকে টাকা কাটা',
+        '/addbalance <code>&lt;pageId&gt; &lt;amount&gt; [note]</code> — balance-এ credit যোগ',
+        '/cutbalance <code>&lt;pageId&gt; &lt;amount&gt; [note]</code> — balance থেকে credit কাটা',
         '/profit <code>[YYYY-MM]</code> — revenue, real AI cost ও profit (test page বাদে)',
         '/testpage <code>&lt;pageId&gt;</code> — নিজের test page মার্ক/আনমার্ক (profit হিসাবের বাইরে থাকবে)',
       ].join('\n'),
@@ -501,15 +501,15 @@ export class TelegramController {
     );
     const page = await this.prisma.page.findUnique({
       where: { id: pageId },
-      select: { pageName: true, walletBalanceBdt: true },
+      select: { pageName: true, creditBalance: true },
     });
-    const newBalance = fmtBdt(
-      Math.round((page?.walletBalanceBdt ?? 0) * 100) / 100,
+    const newBalance = fmtNum(
+      Math.round((page?.creditBalance ?? 0) * 100) / 100,
     );
     await this.adminTelegram.sendMessage(
       sign > 0
-        ? `✅ Page #${pageId} <b>${tgEsc(page?.pageName ?? '')}</b>-এ ৳${fmtBdt(amount)} যোগ হলো।\n💰 নতুন balance: ৳${newBalance}`
-        : `✅ Page #${pageId} <b>${tgEsc(page?.pageName ?? '')}</b> থেকে ৳${fmtBdt(amount)} কাটা হলো।\n💰 নতুন balance: ৳${newBalance}`,
+        ? `✅ Page #${pageId} <b>${tgEsc(page?.pageName ?? '')}</b>-এ ${fmtNum(amount)} credit যোগ হলো।\n💰 নতুন balance: ${newBalance} credit`
+        : `✅ Page #${pageId} <b>${tgEsc(page?.pageName ?? '')}</b> থেকে ${fmtNum(amount)} credit কাটা হলো।\n💰 নতুন balance: ${newBalance} credit`,
     );
   }
 
@@ -633,7 +633,7 @@ export class TelegramController {
     const lines = slice.map((p: any) => {
       const st = p.subscriptionStatus === 'ACTIVE' ? '✅' : '🚫';
       const test = p.isTestPage ? ' 🧪test' : '';
-      return `${st} <b>#${p.id} ${tgEsc(p.pageName)}</b>${test}\n   👤 ${tgEsc(p.owner?.username ?? '?')} | 💰 ৳${Math.round(p.walletBalanceBdt)} | ${p.subscriptionStatus}`;
+      return `${st} <b>#${p.id} ${tgEsc(p.pageName)}</b>${test}\n   👤 ${tgEsc(p.owner?.username ?? '?')} | 💰 ${Math.round(p.creditBalance)} credit | ${p.subscriptionStatus}`;
     });
     const buttons = slice.map((p: any) =>
       p.subscriptionStatus === 'ACTIVE'
@@ -670,7 +670,7 @@ export class TelegramController {
           `💰 <b>Recharge Request #${r.id}</b>`,
           `🏪 ${tgEsc(r.page?.pageName ?? '?')} (page #${r.pageId})`,
           `👤 ${tgEsc(r.page?.owner?.username ?? '?')}`,
-          `💵 ৳${r.amountBdt} | 📱 ${tgEsc(r.method)}`,
+          `💵 ৳${r.amountBdt} → ${r.creditsAmount} credit | 📱 ${tgEsc(r.method)}`,
           `🔖 TrxID: <code>${tgEsc(r.transactionId)}</code>`,
         ].join('\n'),
         [
@@ -862,7 +862,7 @@ export class TelegramController {
       await tx.page.update({
         where: { id: req.pageId },
         data: {
-          walletBalanceBdt: { increment: req.amountBdt },
+          creditBalance: { increment: req.creditsAmount },
           subscriptionStatus: 'ACTIVE',
         },
       });
@@ -870,8 +870,8 @@ export class TelegramController {
         data: {
           pageId: req.pageId,
           type: 'RECHARGE',
-          amountBdt: req.amountBdt,
-          description: `${req.method.toUpperCase()} Recharge — TrxID: ${req.transactionId}`,
+          amountCredit: req.creditsAmount,
+          description: `${req.method.toUpperCase()} Recharge — ৳${req.amountBdt} → ${req.creditsAmount} credit (TrxID: ${req.transactionId})`,
         },
       });
       await tx.walletRechargeRequest.update({
@@ -886,15 +886,15 @@ export class TelegramController {
 
     await this.adminTelegram.answerCallback(
       callbackQueryId,
-      `✅ Approved! ৳${req.amountBdt} added`,
+      `✅ Approved! ${req.creditsAmount} credit added`,
     );
     await this.adminTelegram.sendMessage(
-      `✅ <b>Recharge Approved</b>\nRequest #${id} — ৳${req.amountBdt} balance যোগ হয়েছে (via Telegram)`,
+      `✅ <b>Recharge Approved</b>\nRequest #${id} — ${req.creditsAmount} credit balance যোগ হয়েছে (via Telegram)`,
     );
     // Notify the client on their page Telegram that the balance was added.
     void this.telegram.notify(
       req.pageId,
-      `✅ <b>Wallet Recharge Approved</b>\n💰 ৳${req.amountBdt} আপনার balance-এ যোগ হয়েছে। ধন্যবাদ! 🎉`,
+      `✅ <b>Wallet Recharge Approved</b>\n💰 ${req.creditsAmount} credit আপনার balance-এ যোগ হয়েছে। ধন্যবাদ! 🎉`,
     );
   }
 
@@ -1009,7 +1009,7 @@ export class TelegramController {
       token,
       chatId,
       [
-        `🛍 <b>${tgEsc(pageName || 'ChatCat')} — Control Panel</b>`,
+        `🛍 <b>${tgEsc(pageName || 'FlamboyAI')} — Control Panel</b>`,
         '',
         'নিচের permanent বাটন থেকে এক চাপে সব কাজ করুন:',
         '',
@@ -1189,7 +1189,7 @@ export class TelegramController {
     const [page, txs] = await Promise.all([
       this.prisma.page.findUnique({
         where: { id: pageId },
-        select: { walletBalanceBdt: true, subscriptionStatus: true },
+        select: { creditBalance: true, subscriptionStatus: true },
       }),
       this.prisma.walletTransaction.findMany({
         where: { pageId },
@@ -1197,21 +1197,21 @@ export class TelegramController {
         take: 5,
       }),
     ]);
-    const balance = Math.round((page?.walletBalanceBdt ?? 0) * 100) / 100;
+    const balance = Math.round((page?.creditBalance ?? 0) * 100) / 100;
     const st =
       page?.subscriptionStatus === 'ACTIVE'
         ? '✅ ACTIVE'
         : `🚫 ${page?.subscriptionStatus ?? '?'}`;
     const txLines = txs.map((t) => {
-      const amt = Math.round(Math.abs(t.amountBdt) * 100) / 100;
-      return `${t.amountBdt >= 0 ? '➕' : '➖'} ৳${fmtBdt(amt)} — ${tgEsc(t.description || t.type)}`;
+      const amt = Math.round(Math.abs(t.amountCredit) * 100) / 100;
+      return `${t.amountCredit >= 0 ? '➕' : '➖'} ${fmtNum(amt)} credit — ${tgEsc(t.description || t.type)}`;
     });
     await this.telegram.sendRaw(
       token,
       chatId,
       [
         '💰 <b>Wallet</b>',
-        `Balance: <b>৳${fmtBdt(balance)}</b>`,
+        `Balance: <b>${fmtNum(balance)} credit</b>`,
         `Status: ${st}`,
         '',
         txLines.length
@@ -1245,7 +1245,7 @@ export class TelegramController {
     }
     const lines = products.map(
       (p) =>
-        `• <code>${tgEsc(p.code)}</code> ${tgEsc(p.name || '-')} — ৳${fmtBdt(p.price)} | Stock: ${p.stockQty}`,
+        `• <code>${tgEsc(p.code)}</code> ${tgEsc(p.name || '-')} — ৳${fmtNum(p.price)} | Stock: ${p.stockQty}`,
     );
     await this.telegram.sendRaw(
       token,

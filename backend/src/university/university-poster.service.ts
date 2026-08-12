@@ -63,7 +63,7 @@ export class UniversityPosterService {
   private async fetchNoticeContent(url: string): Promise<string> {
     try {
       const res = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
         signal: AbortSignal.timeout(8_000),
       });
       if (!res.ok) return '';

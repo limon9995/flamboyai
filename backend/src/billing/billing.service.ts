@@ -10,6 +10,7 @@ import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../common/telegram.service';
 import { SmsGatewayService } from '../sms-gateway/sms-gateway.service';
+import { PartnerService } from '../partner/partner.service';
 
 const TRIAL_DAYS = 7;
 const PAGE_FEATURE_FIELDS = [
@@ -37,6 +38,7 @@ export class BillingService {
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
     private readonly smsGateway: SmsGatewayService,
+    private readonly partner: PartnerService,
   ) {}
 
   // ── Startup: ensure single default plan exists (required for DB FK) ────────
@@ -256,6 +258,12 @@ export class BillingService {
         },
       });
       this.logger.log(`[Billing] Payment auto-confirmed via SMS txn=${body.transactionId}`);
+      void this.partner.recordEarningIfReferred(
+        userId,
+        'SUBSCRIPTION_FEE',
+        body.amount,
+        payment.id,
+      );
       return {
         paymentId: payment.id,
         status: 'confirmed',
@@ -342,6 +350,12 @@ export class BillingService {
     });
 
     this.logger.log(`[Billing] Payment confirmed ${paymentId} → subscription activated`);
+    void this.partner.recordEarningIfReferred(
+      payment.subscription.userId,
+      'SUBSCRIPTION_FEE',
+      payment.amount,
+      payment.id,
+    );
     return {
       success: true,
       message: `Subscription activated until ${periodEnd.toLocaleDateString()}`,

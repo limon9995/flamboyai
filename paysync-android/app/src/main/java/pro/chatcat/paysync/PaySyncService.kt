@@ -1,4 +1,4 @@
-package pro.chatcat.paysync
+package pro.FlamboyAI.paysync
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -74,7 +74,7 @@ class PaySyncService : Service() {
         )
 
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("ChatCat PaySync Active")
+            .setContentTitle("FlamboyAI PaySync Active")
             .setContentText("বিকাশ/নগদ পেমেন্ট মেসেজ সিঙ্ক করা হচ্ছে...")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(pendingIntent)
@@ -112,7 +112,7 @@ class PaySyncService : Service() {
     }
 
     private fun getTokens(): List<String> {
-        val prefs = getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         val raw = prefs.getString("pageTokens", null) ?: return emptyList()
         return try {
             val arr = JSONArray(raw)
@@ -125,7 +125,7 @@ class PaySyncService : Service() {
         val tokens = getTokens()
         if (tokens.isEmpty()) return
 
-        val prefs = getSharedPreferences("ChatCatPrefs", android.content.Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("FlamboyAIPrefs", android.content.Context.MODE_PRIVATE)
         val lastId = prefs.getLong("last_polled_sms_id", 0L)
         val cutoff = System.currentTimeMillis() - 10 * 60 * 1000L // last 10 min only
 
@@ -171,7 +171,7 @@ class PaySyncService : Service() {
         }
         val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
         val request = Request.Builder()
-            .url("https://api.chatcat.pro/sms-gateway/incoming?pageToken=$token")
+            .url("https://api.flamboyai.com/sms-gateway/incoming?pageToken=$token")
             .post(body).build()
         httpClient.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) { addLog("❌ Poll [$from] — ব্যর্থ: ${e.message}") }
@@ -184,7 +184,7 @@ class PaySyncService : Service() {
     }
 
     private fun addLog(message: String) {
-        val prefs = getSharedPreferences("ChatCatPrefs", android.content.Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("FlamboyAIPrefs", android.content.Context.MODE_PRIVATE)
         val t = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
         val updated = "[$t] $message\n${prefs.getString("sync_logs", "") ?: ""}"
         prefs.edit().putString("sync_logs", updated.split("\n").take(20).joinToString("\n")).apply()
@@ -203,7 +203,7 @@ class PaySyncService : Service() {
             }
             val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
             val request = Request.Builder()
-                .url("https://api.chatcat.pro/sms-gateway/connect")
+                .url("https://api.flamboyai.com/sms-gateway/connect")
                 .post(body)
                 .build()
             httpClient.newCall(request).enqueue(object : Callback {
@@ -217,7 +217,7 @@ class PaySyncService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val serviceChannel = NotificationChannel(
                 CHANNEL_ID,
-                "ChatCat PaySync Background Service",
+                "FlamboyAI PaySync Background Service",
                 NotificationManager.IMPORTANCE_LOW
             )
             val manager = getSystemService(NotificationManager::class.java)

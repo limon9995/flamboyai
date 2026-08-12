@@ -6,6 +6,18 @@
         "serve"
       ],
       "type": "stdio"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "type": "stdio"
+    },
+    "meta_developer_tools": {
+      "type": "http",
+      "url": "https://mcp.facebook.com/devtools"
     }
   }
 }

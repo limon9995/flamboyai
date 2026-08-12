@@ -332,7 +332,7 @@ export class DraftOrderHandler {
       if (intent === 'CONFIRM') {
         // Wallet-based check (primary): page must be ACTIVE with positive balance
         const walletOk =
-          page.subscriptionStatus === 'ACTIVE' && page.walletBalanceBdt > 0;
+          page.subscriptionStatus === 'ACTIVE' && page.creditBalance > 0;
         // Legacy billing check (fallback): only block if wallet check also fails
         if (!walletOk && page.ownerId) {
           const billingStatus = await this.billing.getStatus(page.ownerId);
@@ -638,14 +638,16 @@ export class DraftOrderHandler {
         if (milestone?.enabled) {
           if (milestone.rewards.length) {
             const whats = milestone.rewards.map((r) =>
-              r.rewardType === 'FREE_DELIVERY' ? 'ফ্রি ডেলিভারি' : `ফ্রি ${r.productName}`,
+              r.rewardType === 'FREE_DELIVERY' ? 'ফ্রি ডেলিভারি'
+              : r.rewardType === 'DISCOUNT' ? `${r.discountPercent}% ছাড়`
+              : `ফ্রি ${r.productName}`,
             );
             (draft as any).milestoneMessage = `🎁 এই অর্ডারেই আপনি পাচ্ছেন ${whats.join(' + ')}!`;
           } else if (milestone.next) {
             const what =
-              milestone.next.rewardType === 'FREE_DELIVERY'
-                ? 'ফ্রি ডেলিভারি'
-                : `ফ্রি ${milestone.next.productName}`;
+              milestone.next.rewardType === 'FREE_DELIVERY' ? 'ফ্রি ডেলিভারি'
+              : milestone.next.rewardType === 'DISCOUNT' ? `${milestone.next.discountPercent}% ছাড়`
+              : `ফ্রি ${milestone.next.productName}`;
             (draft as any).milestoneMessage = `🎁 আরও ${milestone.next.ordersAway}টা অর্ডার করলে পাবেন ${what}!`;
           }
         }
@@ -687,7 +689,7 @@ export class DraftOrderHandler {
         if (activeCred?.type === 'gateway') {
           const amount = this.calcAdvanceAmount(draft, page);
           const apiBaseUrl =
-            process.env.API_BASE_URL || `https://api.chatcat.pro`;
+            process.env.API_BASE_URL || `https://api.flamboyai.com`;
           try {
             const pending = await this.paymentVerify.createPendingPayment(
               pageId,
@@ -941,6 +943,7 @@ export class DraftOrderHandler {
       .getMilestoneRewards(pageId, draft.phone ?? null, isCombo)
       .catch(() => ({ thisOrderNumber: 0, rewards: [] as any[] }));
     const milestoneFreeDelivery = milestoneRewards.some((r) => r.rewardType === 'FREE_DELIVERY');
+    const milestoneDiscountAmount = this.pricing.computeMilestoneDiscount(milestoneRewards, orderSubtotal);
 
     // C-3: Create order AND decrement stock atomically
     const order = await this.prisma.$transaction(async (tx) => {
@@ -970,6 +973,7 @@ export class DraftOrderHandler {
           spamCheckedAt: spamResult ? new Date() : null,
           loyaltyDiscountAmount: discounts.loyaltyDiscount,
           happyHourDiscountAmount: discounts.happyHourDiscount,
+          milestoneDiscountAmount,
           milestoneRewardAppliedJson: milestoneRewards.length
             ? JSON.stringify(milestoneRewards.map((r) => ({ ...r, orderNumber: thisOrderNumber })))
             : null,

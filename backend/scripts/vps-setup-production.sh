@@ -1,6 +1,6 @@
 #!/bin/bash
-# One-time production hardening for the ChatCat VPS.
-# Run as root on the server:  bash /var/www/chatcatpro/backend/scripts/vps-setup-production.sh
+# One-time production hardening for the FlamboyAI VPS.
+# Run as root on the server:  bash /var/www/flamboyai/backend/scripts/vps-setup-production.sh
 set -e
 
 echo "── 1/4 Daily backup script ──────────────────────────────────"
@@ -11,16 +11,16 @@ if [ ! -f /root/.backup-pass ]; then
   openssl rand -base64 24 > /root/.backup-pass
   chmod 600 /root/.backup-pass
 fi
-cat > /root/backup-chatcat.sh << 'EOF'
+cat > /root/backup-FlamboyAI.sh << 'EOF'
 #!/bin/bash
-# Daily ChatCat backup: PostgreSQL DB + file storage. Keeps last 7 days locally.
+# Daily FlamboyAI backup: PostgreSQL DB + file storage. Keeps last 7 days locally.
 # Also sends an AES-256-encrypted copy to the admin Telegram bot (off-site).
 set -e
 STAMP=$(date +%F)
 DIR=/root/backups/$STAMP
 mkdir -p "$DIR"
-sudo -u postgres pg_dump chatcatpro_dev | gzip > "$DIR/chatcatpro-db-$STAMP.sql.gz"
-tar czf "$DIR/chatcat-storage-$STAMP.tar.gz" -C /var/www/chatcatpro/backend storage data 2>/dev/null || true
+sudo -u postgres pg_dump flamboyai_dev | gzip > "$DIR/flamboyai-db-$STAMP.sql.gz"
+tar czf "$DIR/FlamboyAI-storage-$STAMP.tar.gz" -C /var/www/flamboyai/backend storage data 2>/dev/null || true
 find /root/backups -maxdepth 1 -type d -name "20*" -mtime +7 -exec rm -rf {} \;
 echo "$(date -Is) backup OK -> $DIR ($(du -sh "$DIR" | cut -f1))" >> /root/backups/backup.log
 
@@ -28,7 +28,7 @@ echo "$(date -Is) backup OK -> $DIR ($(du -sh "$DIR" | cut -f1))" >> /root/backu
 # Token/chatId come from the app's admin settings (storage/settings/api-keys.json).
 # Decrypt later with:
 #   openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/root/.backup-pass -in FILE.enc -out FILE
-KEYS=/var/www/chatcatpro/backend/storage/settings/api-keys.json
+KEYS=/var/www/flamboyai/backend/storage/settings/api-keys.json
 TOKEN=$(python3 -c "import json;print(json.load(open('$KEYS')).get('telegramBotToken',''))" 2>/dev/null || true)
 CHATID=$(python3 -c "import json;print(json.load(open('$KEYS')).get('telegramChatId',''))" 2>/dev/null || true)
 if [ -n "$TOKEN" ] && [ -n "$CHATID" ] && [ -f /root/.backup-pass ]; then
@@ -37,7 +37,7 @@ if [ -n "$TOKEN" ] && [ -n "$CHATID" ] && [ -f /root/.backup-pass ]; then
     [ -e "$f" ] || continue
     openssl enc -aes-256-cbc -pbkdf2 -pass file:/root/.backup-pass -in "$f" -out "$f.enc"
     if curl -s -F chat_id="$CHATID" -F document=@"$f.enc" \
-        -F caption="🐱 ChatCat backup $STAMP — $(basename "$f").enc (AES-256 encrypted)" \
+        -F caption="🐱 FlamboyAI backup $STAMP — $(basename "$f").enc (AES-256 encrypted)" \
         "https://api.telegram.org/bot$TOKEN/sendDocument" | grep -q '"ok":true'; then
       SENT=$((SENT+1))
     else
@@ -48,8 +48,8 @@ if [ -n "$TOKEN" ] && [ -n "$CHATID" ] && [ -f /root/.backup-pass ]; then
   echo "$(date -Is) telegram sent $SENT file(s)" >> /root/backups/backup.log
 fi
 EOF
-chmod 700 /root/backup-chatcat.sh
-bash /root/backup-chatcat.sh
+chmod 700 /root/backup-FlamboyAI.sh
+bash /root/backup-FlamboyAI.sh
 echo "Test backup done:"; ls -lh "/root/backups/$(date +%F)/"
 tail -2 /root/backups/backup.log
 echo ""
@@ -58,12 +58,12 @@ echo "    Without it, the Telegram backup copies CANNOT be decrypted:"
 echo "    $(cat /root/.backup-pass)"
 
 echo "── 2/4 Cron: backup every night 21:00 UTC (3 AM Bangladesh) ─"
-( crontab -l 2>/dev/null | grep -v backup-chatcat.sh ; echo "0 21 * * * /root/backup-chatcat.sh" ) | crontab -
+( crontab -l 2>/dev/null | grep -v backup-FlamboyAI.sh ; echo "0 21 * * * /root/backup-FlamboyAI.sh" ) | crontab -
 crontab -l
 
 echo "── 3/4 Log rotation for PM2 + app logs ─────────────────────"
 cat > /etc/logrotate.d/pm2-apps << 'EOF'
-/root/.pm2/logs/*.log /var/www/chatcatpro/backend/logs/*.log {
+/root/.pm2/logs/*.log /var/www/flamboyai/backend/logs/*.log {
     daily
     rotate 7
     compress

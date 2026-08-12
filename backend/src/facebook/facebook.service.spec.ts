@@ -11,7 +11,7 @@ describe('FacebookService', () => {
   let mailer: any;
 
   beforeEach(() => {
-    process.env.STORAGE_PUBLIC_URL = 'https://api.chatcat.pro/storage';
+    process.env.STORAGE_PUBLIC_URL = 'https://api.flamboyai.com/storage';
     process.env.FB_APP_ID = 'test-app-id';
     process.env.FB_OAUTH_STATE_SECRET = 'test-state-secret';
     prisma = {
@@ -106,7 +106,7 @@ describe('FacebookService', () => {
     expect(authService.addPageToUser).toHaveBeenCalledWith('user-1', 1);
     expect(result.page.pageId).toBe('1046542211868208');
     expect(result.page.pageName).toBe('Limon Tech Diary');
-    expect(result.webhookUrl).toBe('https://api.chatcat.pro/webhook');
+    expect(result.webhookUrl).toBe('https://api.flamboyai.com/webhook');
   });
 
   it('blocks connect when the verified page already belongs to another user', async () => {
@@ -273,7 +273,7 @@ describe('FacebookService — admin moderator-access approval', () => {
     jest.spyOn(service, 'connectPage').mockResolvedValue({
       success: true,
       page: { id: 42, pageId: '999', pageName: 'My Shop' },
-      webhookUrl: 'https://api.chatcat.pro/webhook',
+      webhookUrl: 'https://api.flamboyai.com/webhook',
     } as any);
 
     const result = await service.approvePageRequestViaFacebookLogin(5, [
@@ -368,7 +368,7 @@ describe('FacebookService — admin moderator-access approval', () => {
     jest.spyOn(service, 'connectPage').mockResolvedValue({
       success: true,
       page: { id: 55, pageId: '222', pageName: 'myshop' },
-      webhookUrl: 'https://api.chatcat.pro/webhook',
+      webhookUrl: 'https://api.flamboyai.com/webhook',
     } as any);
 
     const result = await service.finalizeAmbiguousApproval(ambiguous.resultId, '222');

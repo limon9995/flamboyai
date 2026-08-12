@@ -608,6 +608,7 @@ export class OrdersService {
       .filter((r) => r.rewardType === 'FREE_ITEM' && r.productCode)
       .map((r) => ({ productCode: r.productCode!, qty: r.qty, unitPrice: 0, productName: `🎁 Free — ${r.productName}`, metaJson: null }));
     const freeDelivery = rewards.some((r) => r.rewardType === 'FREE_DELIVERY');
+    const milestoneDiscountAmount = this.pricing.computeMilestoneDiscount(rewards, subtotal);
 
     return this.prisma.order.create({
       data: {
@@ -627,6 +628,7 @@ export class OrdersService {
         deliveryDistanceKm: data.deliveryDistanceKm ?? null,
         loyaltyDiscountAmount: discounts.loyaltyDiscount,
         happyHourDiscountAmount: discounts.happyHourDiscount,
+        milestoneDiscountAmount,
         milestoneRewardAppliedJson: rewards.length
           ? JSON.stringify(rewards.map((r) => ({ ...r, orderNumber: thisOrderNumber })))
           : null,

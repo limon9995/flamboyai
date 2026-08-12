@@ -1,4 +1,4 @@
-package pro.chatcat.paysync
+package pro.FlamboyAI.paysync
 
 import android.content.BroadcastReceiver
 import android.content.Context

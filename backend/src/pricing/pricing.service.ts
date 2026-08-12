@@ -20,18 +20,19 @@ export interface HappyHourStatus {
 
 export interface MilestoneReward {
   interval: number;
-  rewardType: 'FREE_ITEM' | 'FREE_DELIVERY';
+  rewardType: 'FREE_ITEM' | 'FREE_DELIVERY' | 'DISCOUNT';
   productId?: number;
   productCode?: string;
   productName?: string;
   qty: number;
+  discountPercent?: number;
 }
 
 export interface MilestonePreview {
   enabled: boolean;
   thisOrderNumber: number;
   rewards: MilestoneReward[];
-  next: { interval: number; ordersAway: number; rewardType: string; productName?: string } | null;
+  next: { interval: number; ordersAway: number; rewardType: string; productName?: string; discountPercent?: number } | null;
 }
 
 export interface DiscountResult {
@@ -194,18 +195,20 @@ export class PricingService {
       (m) =>
         m.orderInterval > 0 &&
         thisOrderNumber % m.orderInterval === 0 &&
-        !(m.rewardType === 'FREE_ITEM' && !m.product), // skip if reward product was deleted
+        !(m.rewardType === 'FREE_ITEM' && !m.product) && // skip if reward product was deleted
+        !(m.rewardType === 'DISCOUNT' && !m.discountPercent), // skip if misconfigured
     );
 
     return {
       thisOrderNumber,
       rewards: matches.map((m) => ({
         interval: m.orderInterval,
-        rewardType: m.rewardType as 'FREE_ITEM' | 'FREE_DELIVERY',
+        rewardType: m.rewardType as 'FREE_ITEM' | 'FREE_DELIVERY' | 'DISCOUNT',
         productId: m.product?.id,
         productCode: m.product?.code,
         productName: m.product?.name ?? m.product?.code,
         qty: m.qty,
+        discountPercent: m.discountPercent ?? undefined,
       })),
     };
   }
@@ -230,16 +233,17 @@ export class PricingService {
     const hits = milestones.filter((m) => m.orderInterval > 0 && thisOrderNumber % m.orderInterval === 0);
     const rewards: MilestoneReward[] = hits.map((hit) => ({
       interval: hit.orderInterval,
-      rewardType: hit.rewardType as 'FREE_ITEM' | 'FREE_DELIVERY',
+      rewardType: hit.rewardType as 'FREE_ITEM' | 'FREE_DELIVERY' | 'DISCOUNT',
       productId: hit.product?.id,
       productCode: hit.product?.code,
       productName: hit.product?.name ?? hit.product?.code,
       qty: hit.qty,
+      discountPercent: hit.discountPercent ?? undefined,
     }));
 
     let next: MilestonePreview['next'] = null;
     if (!rewards.length && milestones.length) {
-      let best: { interval: number; ordersAway: number; rewardType: string; productName?: string } | null = null;
+      let best: { interval: number; ordersAway: number; rewardType: string; productName?: string; discountPercent?: number } | null = null;
       for (const m of milestones) {
         if (m.orderInterval <= 0) continue;
         const upcoming = Math.ceil(thisOrderNumber / m.orderInterval) * m.orderInterval;
@@ -250,6 +254,7 @@ export class PricingService {
             ordersAway,
             rewardType: m.rewardType,
             productName: m.product?.name ?? m.product?.code,
+            discountPercent: m.discountPercent ?? undefined,
           };
         }
       }
@@ -257,5 +262,12 @@ export class PricingService {
     }
 
     return { enabled: true, thisOrderNumber, rewards, next };
+  }
+
+  /** Sums the % discount of every DISCOUNT-type milestone reward that hit, against subtotal. */
+  computeMilestoneDiscount(rewards: MilestoneReward[], subtotal: number): number {
+    return rewards
+      .filter((r) => r.rewardType === 'DISCOUNT' && r.discountPercent)
+      .reduce((sum, r) => sum + Math.round((subtotal * (r.discountPercent ?? 0)) / 100), 0);
   }
 }

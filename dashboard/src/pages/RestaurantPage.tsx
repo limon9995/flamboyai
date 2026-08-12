@@ -731,17 +731,25 @@ function MilestoneModal({ th, pageId, milestone, products, onClose, onToast, onS
   const RBASE = `${API_BASE}/restaurant/${pageId}`;
   const isEdit = Boolean(milestone?.id);
   const [orderInterval, setOrderInterval] = useState(milestone?.orderInterval || 3);
-  const [rewardType, setRewardType] = useState<'FREE_ITEM' | 'FREE_DELIVERY'>(milestone?.rewardType || 'FREE_ITEM');
+  const [rewardType, setRewardType] = useState<'FREE_ITEM' | 'FREE_DELIVERY' | 'DISCOUNT'>(milestone?.rewardType || 'FREE_ITEM');
   const [productId, setProductId] = useState<number>(milestone?.productId || 0);
   const [qty, setQty] = useState(milestone?.qty || 1);
+  const [discountPercent, setDiscountPercent] = useState<number>(milestone?.discountPercent || 10);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     if (!orderInterval || orderInterval < 2) return onToast(copy('২ বা তার বেশি একটা সংখ্যা দিন', 'Enter a number 2 or higher'), 'error');
     if (rewardType === 'FREE_ITEM' && !productId) return onToast(copy('কোন item free দেবেন বেছে নিন', 'Pick a free item'), 'error');
+    if (rewardType === 'DISCOUNT' && (!discountPercent || discountPercent <= 0 || discountPercent > 100))
+      return onToast(copy('ছাড়ের পরিমাণ ১-১০০% এর মধ্যে দিন', 'Enter a discount between 1-100%'), 'error');
     setSaving(true);
     try {
-      const body = { orderInterval: Number(orderInterval), rewardType, productId: rewardType === 'FREE_ITEM' ? productId : null, qty: Number(qty) || 1 };
+      const body = {
+        orderInterval: Number(orderInterval), rewardType,
+        productId: rewardType === 'FREE_ITEM' ? productId : null,
+        qty: Number(qty) || 1,
+        discountPercent: rewardType === 'DISCOUNT' ? Number(discountPercent) : null,
+      };
       if (isEdit) await request(`${RBASE}/milestones/${milestone.id}`, { method: 'PATCH', body: JSON.stringify(body) });
       else await request(`${RBASE}/milestones`, { method: 'POST', body: JSON.stringify(body) });
       onToast(copy('✅ সেভ হয়েছে', '✅ Saved'), 'success');
@@ -762,9 +770,10 @@ function MilestoneModal({ th, pageId, milestone, products, onClose, onToast, onS
               onChange={e => setOrderInterval(Number(e.target.value))} />
           </FieldWithInfo>
           <FieldWithInfo th={th} label={copy('Reward ধরন', 'Reward type')} helpText="">
-            <select style={{ ...th.input, padding: '8px 10px' }} value={rewardType} onChange={e => setRewardType(e.target.value === 'FREE_DELIVERY' ? 'FREE_DELIVERY' : 'FREE_ITEM')}>
+            <select style={{ ...th.input, padding: '8px 10px' }} value={rewardType} onChange={e => setRewardType(e.target.value === 'FREE_DELIVERY' ? 'FREE_DELIVERY' : e.target.value === 'DISCOUNT' ? 'DISCOUNT' : 'FREE_ITEM')}>
               <option value="FREE_ITEM">{copy('🎁 নির্দিষ্ট item Free', '🎁 Specific item free')}</option>
               <option value="FREE_DELIVERY">{copy('🛵 Free Delivery', '🛵 Free Delivery')}</option>
+              <option value="DISCOUNT">{copy('💸 ছাড় (Discount %)', '💸 Discount %')}</option>
             </select>
           </FieldWithInfo>
           {rewardType === 'FREE_ITEM' && (
@@ -779,6 +788,12 @@ function MilestoneModal({ th, pageId, milestone, products, onClose, onToast, onS
                 <input style={{ ...th.input, padding: '8px 10px' }} type="number" min={1} value={qty} onChange={e => setQty(Number(e.target.value))} />
               </FieldWithInfo>
             </div>
+          )}
+          {rewardType === 'DISCOUNT' && (
+            <FieldWithInfo th={th} label={copy('ছাড়ের পরিমাণ (%)', 'Discount (%)')} helpText={copy('অর্ডারের সাবটোটালের উপর এই % ছাড় প্রয়োগ হবে', 'This % is applied off the order subtotal')}>
+              <input style={{ ...th.input, padding: '8px 10px' }} type="number" min={1} max={100} value={discountPercent}
+                onChange={e => setDiscountPercent(Number(e.target.value))} />
+            </FieldWithInfo>
           )}
           <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
             <button style={th.btnPrimary} onClick={save} disabled={saving}>
@@ -836,7 +851,7 @@ export function RestaurantPage({ th, pageId, onToast }: {
   const [packaging, setPackaging] = useState<{ ingredientId: number; qty: number }[]>([]);
   const [packSaving, setPackSaving] = useState(false);
   const [invRecipeCode, setInvRecipeCode] = useState('');
-  const [showInvGuide, setShowInvGuide] = useState(() => localStorage.getItem(`chatcat_inv_guide_${pageId}`) !== '0');
+  const [showInvGuide, setShowInvGuide] = useState(() => localStorage.getItem(`FlamboyAI_inv_guide_${pageId}`) !== '0');
 
   // menu photos (sent to customers in Messenger)
   const [menuImages, setMenuImages] = useState<string[]>([]);
@@ -1260,7 +1275,7 @@ export function RestaurantPage({ th, pageId, onToast }: {
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                 <strong style={{ fontSize: 12.5 }}>{copy('💡 Inventory কীভাবে কাজ করে', '💡 How Inventory works')}</strong>
                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 11.5, fontFamily: 'inherit' }}
-                  onClick={() => { setShowInvGuide(false); localStorage.setItem(`chatcat_inv_guide_${pageId}`, '0'); }}>
+                  onClick={() => { setShowInvGuide(false); localStorage.setItem(`FlamboyAI_inv_guide_${pageId}`, '0'); }}>
                   {copy('বন্ধ করুন ✕', 'Dismiss ✕')}
                 </button>
               </div>
@@ -1273,7 +1288,7 @@ export function RestaurantPage({ th, pageId, onToast }: {
             </div>
           ) : (
             <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: th.muted, fontSize: 11.5, padding: 0, alignSelf: 'flex-start', fontFamily: 'inherit' }}
-              onClick={() => { setShowInvGuide(true); localStorage.setItem(`chatcat_inv_guide_${pageId}`, '1'); }}>
+              onClick={() => { setShowInvGuide(true); localStorage.setItem(`FlamboyAI_inv_guide_${pageId}`, '1'); }}>
               {copy('❔ গাইড দেখুন', '❔ Show guide')}
             </button>
           )}
@@ -1576,7 +1591,9 @@ export function RestaurantPage({ th, pageId, onToast }: {
                       <div style={{ fontSize: 12, color: th.muted }}>
                         {m.rewardType === 'FREE_DELIVERY'
                           ? copy('🛵 ফ্রি Delivery', '🛵 Free Delivery')
-                          : copy(`🎁 ফ্রি ${m.product?.name || m.product?.code} × ${m.qty}`, `🎁 Free ${m.product?.name || m.product?.code} × ${m.qty}`)}
+                          : m.rewardType === 'DISCOUNT'
+                            ? copy(`💸 ${m.discountPercent}% ছাড়`, `💸 ${m.discountPercent}% Discount`)
+                            : copy(`🎁 ফ্রি ${m.product?.name || m.product?.code} × ${m.qty}`, `🎁 Free ${m.product?.name || m.product?.code} × ${m.qty}`)}
                       </div>
                     </div>
                     <button style={{ ...th.btnSmGhost, fontSize: 11.5 }} onClick={() => setMilestoneModal(m)}>✏️ {copy('Edit', 'Edit')}</button>

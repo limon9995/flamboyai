@@ -692,8 +692,8 @@ export function DashboardLayout({
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <img src="/logo.png" alt="Chatcat" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: '50%' }} />
-            {!isMobile && <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.03em', color: th.text }}>Chatcat</span>}
+            <img src="/logo.png" alt="FlamboyAI" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: '50%' }} />
+            {!isMobile && <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: '-0.03em', color: th.text }}>FlamboyAI</span>}
           </div>
 
           {myPages.length > 1 ? (

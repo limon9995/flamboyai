@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { computeTextTierCredits } from './text-tier-pricing';
 
 export type AiStatus = 'ok' | 'no_balance' | 'trial_limit_exceeded' | 'suspended';
 const TRIAL_DAILY_AI_LIMIT = 100;
@@ -30,7 +31,7 @@ export class WalletService {
     try {
       const page = await this.prisma.page.findUnique({
         where: { id: pageId },
-        select: { walletBalanceBdt: true, subscriptionStatus: true, ownerId: true },
+        select: { creditBalance: true, subscriptionStatus: true, ownerId: true },
       });
 
       if (!page) return 'suspended';
@@ -50,7 +51,7 @@ export class WalletService {
         }
       }
 
-      if (page.walletBalanceBdt <= 0) return 'no_balance';
+      if (page.creditBalance <= 0) return 'no_balance';
       return 'ok';
     } catch (error) {
       this.logger.error(`Failed to check AI status for page ${pageId}: ${error}`);
@@ -98,7 +99,7 @@ export class WalletService {
       | 'KEYWORD_REPLY'
       | 'COMMENT_REPLY'
       | 'BROADCAST',
-    options?: { photoCount?: number; memoCount?: number; msgCount?: number; provider?: string },
+    options?: { photoCount?: number; memoCount?: number; msgCount?: number; provider?: string; charCount?: number },
   ): Promise<boolean> {
     try {
       const page = await this.prisma.page.findUnique({ where: { id: pageId } });
@@ -109,65 +110,71 @@ export class WalletService {
 
       switch (type) {
         case 'TEXT':
-          amountToDeduct = page.costPerTextMsgBdt;
+          if (options?.charCount == null) {
+            this.logger.warn(`deductUsage TEXT called without charCount for page ${pageId} — using base tier`);
+          }
+          amountToDeduct = computeTextTierCredits(options?.charCount ?? 0);
           description = 'বট টেক্সট রিপ্লাই';
           break;
         case 'VOICE':
-          amountToDeduct = page.costPerVoiceMsgBdt;
+          amountToDeduct = page.costPerVoiceMsgCredit;
           description = 'ভয়েস মেসেজ প্রসেস';
           break;
         case 'IMAGE':
-          amountToDeduct = page.costPerImageBdt;
+          amountToDeduct = page.costPerImageCredit;
           description = 'ছবি থেকে পণ্য শনাক্ত (AI)';
           break;
         case 'IMAGE_LOCAL':
-          amountToDeduct = (page as any).costPerImageLocalBdt ?? 0.1;
+          amountToDeduct = (page as any).costPerImageLocalCredit ?? 4;
           description = 'ছবি থেকে পণ্য শনাক্ত';
           break;
         case 'IMAGE_OCR':
-          amountToDeduct = page.costPerImageBdt * 0.5;
+          amountToDeduct = Math.max(1, Math.round(page.costPerImageCredit * 0.5));
           description = 'ছবি থেকে অর্ডার কোড পড়া (OCR)';
           break;
         case 'ADMIN_VISION':
-          amountToDeduct = page.costPerAnalyzeBdt;
+          amountToDeduct = page.costPerAnalyzeCredit;
           description = 'পণ্য ছবি বিশ্লেষণ';
           break;
         case 'IMAGE_UNIQUENESS':
-          amountToDeduct = 0.02;
+          amountToDeduct = 1;
           description = 'পণ্য যাচাই';
           break;
         case 'AI_GENERATE':
-          amountToDeduct = (page as any).costPerAiGenerateBdt ?? 0.1;
+          amountToDeduct = (page as any).costPerAiGenerateCredit ?? 4;
           description = 'AI কন্টেন্ট তৈরি';
           break;
         case 'DUAL_PHOTO_AI': {
           const photoCount = options?.photoCount ?? 3;
-          amountToDeduct = (page.costPerAnalyzeBdt ?? 0.2) * photoCount;
+          amountToDeduct = (page.costPerAnalyzeCredit ?? 8) * photoCount;
           description = `ডুয়েল ফটো পণ্য শনাক্ত (${photoCount}টি ছবি)`;
           break;
         }
         case 'SMART_BOT':
-          amountToDeduct = (page.costPerTextMsgBdt ?? 0.05) * 2;
+          if (options?.charCount == null) {
+            this.logger.warn(`deductUsage SMART_BOT called without charCount for page ${pageId} — using base tier`);
+          }
+          amountToDeduct = computeTextTierCredits(options?.charCount ?? 0);
           description = 'স্মার্ট বট রিপ্লাই';
           break;
         case 'MEMO_PRINT': {
           const memoCount = options?.memoCount ?? 1;
           amountToDeduct =
-            ((page as any).costPerMemoPrintBdt ?? 0.1) * memoCount;
+            ((page as any).costPerMemoPrintCredit ?? 4) * memoCount;
           description = `মেমো প্রিন্ট / ডাউনলোড (${memoCount}টি)`;
           break;
         }
         case 'KEYWORD_REPLY':
-          amountToDeduct = (page as any).costPerKeywordReplyBdt ?? 0.02;
+          amountToDeduct = (page as any).costPerKeywordReplyCredit ?? 1;
           description = 'কীওয়ার্ড বট রিপ্লাই';
           break;
         case 'COMMENT_REPLY':
-          amountToDeduct = (page as any).costPerCommentReplyBdt ?? 0.05;
+          amountToDeduct = (page as any).costPerCommentReplyCredit ?? 2;
           description = 'কমেন্ট অটো-রিপ্লাই';
           break;
         case 'BROADCAST': {
           const msgCount = options?.msgCount ?? 1;
-          amountToDeduct = ((page as any).costPerBroadcastMsgBdt ?? 0.05) * msgCount;
+          amountToDeduct = ((page as any).costPerBroadcastMsgCredit ?? 2) * msgCount;
           description = `ব্রডকাস্ট মেসেজ (${msgCount}টি)`;
           break;
         }
@@ -179,7 +186,7 @@ export class WalletService {
       const pageForTrial = await this.prisma.page.findUnique({ where: { id: pageId }, select: { ownerId: true } });
       if (pageForTrial?.ownerId && await this.isTrialPage(pageForTrial.ownerId)) {
         await this.prisma.walletTransaction.create({
-          data: { pageId, type: `DEDUCT_${type}`, amountBdt: 0, description: `[Trial] ${description}`, provider: options?.provider ?? null },
+          data: { pageId, type: `DEDUCT_${type}`, amountCredit: 0, description: `[Trial] ${description}`, provider: options?.provider ?? null },
         });
         return true;
       }
@@ -190,7 +197,7 @@ export class WalletService {
       await this.prisma.$transaction(async (tx) => {
         const current = await tx.page.findUnique({
           where: { id: pageId },
-          select: { walletBalanceBdt: true, subscriptionStatus: true },
+          select: { creditBalance: true, subscriptionStatus: true },
         });
         if (!current) return;
 
@@ -198,18 +205,18 @@ export class WalletService {
         const isGrace = await this.isGracePeriod(pageId, tx as any);
 
         // Non-grace pages: stop deducting once balance hits zero
-        if (!isGrace && current.walletBalanceBdt <= 0) return;
+        if (!isGrace && current.creditBalance <= 0) return;
 
         await tx.page.update({
           where: { id: pageId },
-          data: { walletBalanceBdt: { decrement: amountToDeduct } },
+          data: { creditBalance: { decrement: amountToDeduct } },
         });
 
         await tx.walletTransaction.create({
           data: {
             pageId,
             type: `DEDUCT_${type}`,
-            amountBdt: -amountToDeduct,
+            amountCredit: -amountToDeduct,
             description: isGrace ? `[Grace] ${description}` : description,
             provider: options?.provider ?? null,
           },
@@ -226,28 +233,28 @@ export class WalletService {
   }
 
   /**
-   * Deducts a fixed BDT amount (e.g. SMS verify 1% fee) and logs it.
+   * Deducts a fixed credit amount (e.g. SMS verify 1% fee) and logs it.
    */
   async deductFixed(
     pageId: number,
-    amountBdt: number,
+    amountCredit: number,
     description: string,
     type: string = 'DEDUCT_FIXED',
   ): Promise<boolean> {
-    if (amountBdt <= 0) return true;
+    if (amountCredit <= 0) return true;
     try {
       await this.prisma.$transaction(async (tx) => {
         const current = await tx.page.findUnique({
           where: { id: pageId },
-          select: { walletBalanceBdt: true },
+          select: { creditBalance: true },
         });
-        if (!current || current.walletBalanceBdt <= 0) return;
+        if (!current || current.creditBalance <= 0) return;
         await tx.page.update({
           where: { id: pageId },
-          data: { walletBalanceBdt: { decrement: amountBdt } },
+          data: { creditBalance: { decrement: amountCredit } },
         });
         await tx.walletTransaction.create({
-          data: { pageId, type, amountBdt: -amountBdt, description },
+          data: { pageId, type, amountCredit: -amountCredit, description },
         });
       });
       return true;
@@ -258,29 +265,29 @@ export class WalletService {
   }
 
   /**
-   * Deducts the monthly 699 BDT base platform fee.
+   * Deducts the monthly base platform fee (credit unit).
    * Suspends the page if balance drops to 0 or below after deduction.
    */
   async deductBaseFee(
     pageId: number,
-    feeBdt: number,
+    feeCredit: number,
   ): Promise<{ suspended: boolean }> {
     try {
       let suspended = false;
       await this.prisma.$transaction(async (tx) => {
         const page = await tx.page.findUnique({
           where: { id: pageId },
-          select: { walletBalanceBdt: true, subscriptionStatus: true },
+          select: { creditBalance: true, subscriptionStatus: true },
         });
         if (!page || page.subscriptionStatus !== 'ACTIVE') return;
 
-        const newBalance = page.walletBalanceBdt - feeBdt;
+        const newBalance = page.creditBalance - feeCredit;
         suspended = newBalance <= 0;
 
         await tx.page.update({
           where: { id: pageId },
           data: {
-            walletBalanceBdt: { decrement: feeBdt },
+            creditBalance: { decrement: feeCredit },
             ...(suspended ? { subscriptionStatus: 'SUSPENDED' } : {}),
           },
         });
@@ -289,7 +296,7 @@ export class WalletService {
           data: {
             pageId,
             type: 'DEDUCT_BASE_FEE',
-            amountBdt: -feeBdt,
+            amountCredit: -feeCredit,
             description: `Monthly platform maintenance fee`,
           },
         });
@@ -318,11 +325,11 @@ export class WalletService {
   }
 
   /**
-   * Admin / System recharges a wallet.
+   * Admin / System recharges a wallet with credits.
    */
   async rechargeWallet(
     pageId: number,
-    amountBdt: number,
+    creditAmount: number,
     transactionId: string,
   ): Promise<boolean> {
     try {
@@ -330,7 +337,7 @@ export class WalletService {
         await tx.page.update({
           where: { id: pageId },
           data: {
-            walletBalanceBdt: { increment: amountBdt },
+            creditBalance: { increment: creditAmount },
             subscriptionStatus: 'ACTIVE', // Automatically resume if it was suspended
           },
         });
@@ -339,7 +346,7 @@ export class WalletService {
           data: {
             pageId,
             type: 'RECHARGE',
-            amountBdt: amountBdt,
+            amountCredit: creditAmount,
             description: `Recharge via Trx: ${transactionId}`,
           },
         });

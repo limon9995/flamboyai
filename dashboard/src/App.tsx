@@ -81,7 +81,7 @@ class ErrorBoundary extends Component<{ children: ReactNode; dark: boolean }, { 
               Error: {this.state.errorText || 'Unknown Initialization Error'}
             </p>
             <p>Please try refreshing the page.</p>
-            <button onClick={() => window.location.reload()} style={{ marginTop: 20, padding: '10px 24px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', fontWeight: 700 }}>Reload Chatcat</button>
+            <button onClick={() => window.location.reload()} style={{ marginTop: 20, padding: '10px 24px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff', cursor: 'pointer', fontWeight: 700 }}>Reload FlamboyAI</button>
           </div>
         </div>
       );
@@ -161,7 +161,7 @@ export function AppContent() {
       setScreen('change-password');
       return;
     }
-    if (user.role === 'admin') {
+    if (user.role === 'admin' || user.role === 'agent') {
       setScreen('admin');
       return;
     }
@@ -189,7 +189,7 @@ export function AppContent() {
       const nextPage = found || activePages[0];
       setActivePage(nextPage);
       localStorage.setItem('dfbot_active_page', String(nextPage.id));
-      const onboardingDone = localStorage.getItem(`chatcat_onboarding_${nextPage.id}`);
+      const onboardingDone = localStorage.getItem(`FlamboyAI_onboarding_${nextPage.id}`);
       if (onboardingDone) {
         setScreen('dashboard');
       } else {
@@ -204,7 +204,7 @@ export function AppContent() {
           // check true for every fresh signup, skipping onboarding entirely.
           const alreadyConfigured = settings?.universityModeOn === true || settings?.automationOn === true;
           if (alreadyConfigured) {
-            localStorage.setItem(`chatcat_onboarding_${nextPage.id}`, 'done');
+            localStorage.setItem(`FlamboyAI_onboarding_${nextPage.id}`, 'done');
             setScreen('dashboard');
           } else {
             setScreen('onboarding');
@@ -234,7 +234,7 @@ export function AppContent() {
       setScreen('change-password');
       return;
     }
-    if (result.user?.role === 'admin') {
+    if (result.user?.role === 'admin' || result.user?.role === 'agent') {
       setScreen('admin');
       return;
     }
@@ -251,7 +251,7 @@ export function AppContent() {
     (async () => {
       try {
         const result = await completeGoogleLogin(googleAuth);
-        if (result.user?.role === 'admin') {
+        if (result.user?.role === 'admin' || result.user?.role === 'agent') {
           setScreen('admin');
         } else {
           await loadMyPages();
@@ -283,6 +283,9 @@ export function AppContent() {
       body.username = raw;
     }
 
+    const referralCode = new URLSearchParams(window.location.search).get('ref');
+    if (referralCode) body.referralCode = referralCode;
+
     await request(`${API_BASE}/auth/signup`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -306,7 +309,7 @@ export function AppContent() {
 
   if (screen === 'landing') {
     if (ready && !user) {
-      window.location.href = 'https://chatcat.pro';
+      window.location.href = 'https://flamboyai.com';
     }
     return <ScreenFallback dark={dark} />;
   }
@@ -348,8 +351,8 @@ export function AppContent() {
         dark={dark}
         user={user}
         activePage={activePage}
-        onComplete={() => { localStorage.setItem(`chatcat_onboarding_${activePage.id}`, 'done'); void loadMyPages(); }}
-        onSkip={() => { localStorage.setItem(`chatcat_onboarding_${activePage.id}`, 'done'); void loadMyPages(); }}
+        onComplete={() => { localStorage.setItem(`FlamboyAI_onboarding_${activePage.id}`, 'done'); void loadMyPages(); }}
+        onSkip={() => { localStorage.setItem(`FlamboyAI_onboarding_${activePage.id}`, 'done'); void loadMyPages(); }}
       />
     );
   }
@@ -365,11 +368,11 @@ export function AppContent() {
     );
   }
 
-  if (screen === 'admin' && user?.role === 'admin') {
+  if (screen === 'admin' && (user?.role === 'admin' || user?.role === 'agent')) {
     return (
       <Suspense fallback={<ScreenFallback dark={dark} />}>
         <>
-          <AdminPanel th={th} onToast={showToast} onLogout={handleLogout} />
+          <AdminPanel th={th} onToast={showToast} onLogout={handleLogout} role={user.role} />
           {ToastNode}
         </>
       </Suspense>

@@ -1,4 +1,4 @@
-package pro.chatcat.paysync
+package pro.FlamboyAI.paysync
 
 import android.content.Context
 import android.service.notification.NotificationListenerService
@@ -14,13 +14,13 @@ import java.io.IOException
 class SmsNotificationListener : NotificationListenerService() {
 
     private val client = OkHttpClient()
-    private val WEBHOOK_URL = "https://api.chatcat.pro/sms-gateway/incoming"
+    private val WEBHOOK_URL = "https://api.flamboyai.com/sms-gateway/incoming"
 
     // System packages to skip — not SMS apps
     private val skipPackages = setOf(
         "android", "com.android.systemui", "com.android.settings",
         "com.google.android.gms", "com.google.android.gsf",
-        "pro.chatcat.paysync",
+        "pro.FlamboyAI.paysync",
     )
 
     private val paymentKeywords = listOf(
@@ -57,7 +57,7 @@ class SmsNotificationListener : NotificationListenerService() {
     }
 
     private fun getTokens(): List<String> {
-        val prefs = applicationContext.getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = applicationContext.getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         val raw = prefs.getString("pageTokens", null)
         if (!raw.isNullOrEmpty()) {
             return try {
@@ -88,7 +88,7 @@ class SmsNotificationListener : NotificationListenerService() {
                 if (code in 200..299) {
                     incrementCounter(applicationContext, "sync_count")
                     val time = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
-                    applicationContext.getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+                    applicationContext.getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
                         .edit().putString("last_sync", time).apply()
                     addLog(applicationContext, "✅ $from — সিঙ্ক সফল")
                 } else {
@@ -100,12 +100,12 @@ class SmsNotificationListener : NotificationListenerService() {
     }
 
     private fun incrementCounter(context: Context, key: String) {
-        val prefs = context.getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         prefs.edit().putInt(key, prefs.getInt(key, 0) + 1).apply()
     }
 
     private fun addLog(context: Context, message: String) {
-        val prefs = context.getSharedPreferences("ChatCatPrefs", Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences("FlamboyAIPrefs", Context.MODE_PRIVATE)
         val time = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
         val updated = "[$time] $message\n${prefs.getString("sync_logs", "") ?: ""}"
         prefs.edit().putString("sync_logs", updated.split("\n").take(20).joinToString("\n")).apply()

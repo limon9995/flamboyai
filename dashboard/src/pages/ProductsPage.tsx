@@ -336,7 +336,7 @@ export function ProductsPage({ th, pageId, onToast }: {
 
   // Real per-image cost actually charged by the backend (wallet.service.ts) —
   // shown instead of a guessed number, since admins can customize these per page.
-  const [visionCosts, setVisionCosts] = useState({ ocr: 0.02, vision: 0.2 });
+  const [visionCosts, setVisionCosts] = useState({ ocr: 1, vision: 8 });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -350,8 +350,8 @@ export function ProductsPage({ th, pageId, onToast }: {
       if (settings?.productCodePrefix) setCodePrefix(settings.productCodePrefix);
       if (wallet) {
         setVisionCosts({
-          ocr: Number(wallet.costPerOcrLocalBdt ?? 0.02),
-          vision: Number(wallet.costPerAnalyzeBdt ?? 0.2),
+          ocr: Number(wallet.costPerOcrLocalCredit ?? 1),
+          vision: Number(wallet.costPerAnalyzeCredit ?? 8),
         });
       }
     }
@@ -1062,8 +1062,8 @@ export function ProductsPage({ th, pageId, onToast }: {
                   </div>
                   <span style={{ fontSize: 11, color: th.muted ?? '#888', lineHeight: 1.5 }}>
                     {mode === 'OCR'
-                      ? `Customer image থেকে product code পড়বে। কোনো AI API call হবে না। খরচ: ৳${visionCosts.ocr}/image`
-                      : `AI দিয়ে product detect করবে। খরচ: ৳${visionCosts.vision}/image`}
+                      ? `Customer image থেকে product code পড়বে। কোনো AI API call হবে না। খরচ: ${visionCosts.ocr} credit/image`
+                      : `AI দিয়ে product detect করবে। খরচ: ${visionCosts.vision} credit/image`}
                   </span>
                 </label>
               ))}
@@ -1413,7 +1413,7 @@ export function ProductsPage({ th, pageId, onToast }: {
                                   <span style={{ fontWeight: 700, fontSize: 12, color: th.text }}>{mode === 'OCR' ? '📷 OCR Mode' : '🤖 AI Vision'}</span>
                                 </div>
                                 <span style={{ fontSize: 10, color: th.muted ?? '#888', lineHeight: 1.4 }}>
-                                  {mode === 'OCR' ? `Product code পড়বে • ৳${visionCosts.ocr}/image` : `AI দিয়ে detect করবে • ৳${visionCosts.vision}/image`}
+                                  {mode === 'OCR' ? `Product code পড়বে • ${visionCosts.ocr} credit/image` : `AI দিয়ে detect করবে • ${visionCosts.vision} credit/image`}
                                 </span>
                               </label>
                             ))}

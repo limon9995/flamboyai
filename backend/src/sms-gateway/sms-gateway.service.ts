@@ -6,7 +6,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { parseSms } from './sms-parser';
 import { randomUUID } from 'crypto';
 
-// pageId=-1 is the admin/chatcat billing sentinel
+// pageId=-1 is the admin/FlamboyAI billing sentinel
 const ADMIN_PAGE_ID = -1;
 
 export interface SmsMatchResult {

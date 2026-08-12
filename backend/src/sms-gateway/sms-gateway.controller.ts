@@ -32,7 +32,7 @@ export class SmsGatewayController {
     @Body() dto: IncomingSmsDto,
   ) {
     if (!pageToken) throw new UnauthorizedException('pageToken required');
-    // Admin token path (for chatcat billing verification)
+    // Admin token path (for FlamboyAI billing verification)
     if (this.svc.isAdminToken(pageToken)) {
       await this.svc.handleAdminIncoming(dto.message, dto.from);
       return { ok: true };
@@ -108,7 +108,7 @@ export class SmsGatewayController {
     return this.svc.getAdminStatus();
   }
 
-  // ── Device connect (called by ChatCat PaySync app) — no auth ─────────────
+  // ── Device connect (called by FlamboyAI PaySync app) — no auth ─────────────
   @SkipThrottle({ global: true, auth: true, chat: true })
   @Post('connect')
   @HttpCode(200)

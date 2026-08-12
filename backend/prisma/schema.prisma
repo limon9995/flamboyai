@@ -26,15 +26,68 @@ model User {
   // Google OAuth login — nullable, existing username/password users unaffected
   googleId String? @unique
 
+  // ── Agent (reseller) role ──────────────────────────────────────────────────
+  // Set only on User rows with role="agent". Two independent commission rates:
+  // one for wallet recharge, one for the monthly platform/subscription fee.
+  commissionPercentRecharge     Float?
+  commissionPercentSubscription Float?
+  referralCode                  String? @unique
+  // Set on a client's User row if they signed up via an agent's referral link.
+  referredByAgentId String?
+  referredBy        User?   @relation("AgentReferrals", fields: [referredByAgentId], references: [id])
+  referredClients   User[]  @relation("AgentReferrals")
+
   pages             Page[]
   sessions          Session[]
   subscriptions     Subscription[]
   pageRequests      PageRequest[]
   agentRequests     AgentRequest[]
   waConnectRequests WaConnectRequest[]
+  agentEarnings     AgentEarning[]
+  agentPayouts      AgentPayout[]
 
   @@index([username])
   @@index([email])
+  @@index([referredByAgentId])
+}
+
+// ── AGENT (RESELLER) COMMISSION LEDGER ───────────────────────────────────────
+// Append-only. One row per commission-earning event, snapshotting whichever
+// of the agent's two rates applied so historical rows stay accurate even if
+// the admin later changes the agent's rate.
+model AgentEarning {
+  id     String @id @default(uuid())
+  agentId String
+  agent   User   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  sourceType          String // "RECHARGE" | "SUBSCRIPTION_FEE"
+  sourceUserId        String // paying client — plain string, not a FK, so the
+  // ledger survives even if the client account is later deleted
+  sourcePageId        Int? // set for RECHARGE, null for SUBSCRIPTION_FEE
+  grossAmountBdt      Float
+  commissionPercent   Float // snapshot of whichever rate applied at the time
+  commissionAmountBdt Float
+  referenceId         String // WalletRechargeRequest.id or Payment.id
+  createdAt           DateTime @default(now())
+
+  @@index([agentId])
+  @@index([agentId, createdAt])
+}
+
+// Append-only. One row per manual admin payout to an agent (admin pays the
+// agent externally, then records it here to reduce the agent's owed balance).
+model AgentPayout {
+  id      String @id @default(uuid())
+  agentId String
+  agent   User   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  amountBdt           Float
+  note                String?
+  paidByAdminUsername String
+  createdAt           DateTime @default(now())
+
+  @@index([agentId])
+  @@index([agentId, createdAt])
 }
 
 // OTP tokens for email verification and password reset
@@ -163,6 +216,12 @@ model Page {
   // (Asia/Dhaka time); drives the open/closed badge on the catalog page
   businessHoursJson     String?
 
+  // V29: Messenger product-card buttons — client-configurable list of up to 3
+  // buttons shown on generic-template product cards. JSON [{id, type: 'order'
+  // | 'details' | 'custom', label, url?, replyText?}]. null = legacy default
+  // (Order + Details), unchanged for pages that never touch this setting.
+  productCardButtonsJson String?
+
   // V27: Loyalty ("Lucky Customer") — order N times (by phone number, no
   // account system) to auto-unlock a % discount on every order after.
   loyaltyEnabled          Boolean @default(false)
@@ -200,7 +259,7 @@ model Page {
   businessInfo          String? // Full business description; used as AI knowledge base for businessBotOn mode
   commentReplyOn        Boolean @default(false)
   commentReplyAllowed   Boolean @default(true)
-  costPerCommentReplyBdt Float  @default(0.05)
+  costPerCommentReplyCredit Float  @default(2)
 
   callLanguage        String    @default("BN")
   voiceType           String    @default("FEMALE")
@@ -216,7 +275,7 @@ model Page {
   voiceGeneratedAt    DateTime?
 
   // -- WALLET SYSTEM --
-  walletBalanceBdt Float @default(0.0) // Core currency balance for usage
+  creditBalance Float @default(0.0) // Core currency balance for usage (credit unit, not BDT)
 
   // -- TELEGRAM MERCHANT NOTIFICATIONS --
   telegramBotToken     String? // encrypted (AES-256-GCM via EncryptionService)
@@ -228,18 +287,17 @@ model Page {
   // V24: owner opt-out for the new "new order" email alert (Telegram alert unaffected).
   orderEmailNotifEnabled Boolean @default(true)
 
-  // -- PRICING CONFIG --
-  costPerTextMsgBdt       Float @default(0.05)
-  costPerVoiceMsgBdt      Float @default(1.00)  // For processing audio voice notes
-  costPerImageBdt         Float @default(0.20)  // Customer image — Gemini Vision API path
-  costPerImageLocalBdt    Float @default(0.10)  // Customer image — local Ollama path (no API)
-  costPerAnalyzeBdt       Float @default(0.20)  // Admin uploading product
-  costPerAiGenerateBdt    Float @default(0.10)  // AI text generation (description/broadcast draft)
-  costPerKeywordReplyBdt       Float @default(0.02)   // Pure keyword/template bot reply (no AI call)
-  costPerBroadcastMsgBdt       Float @default(0.05)   // Per broadcast message sent
-  costPerOcrLocalBdt           Float @default(0.02)   // OCR via local Tesseract
-  costPerOcrAiBdt              Float @default(0.05)   // OCR via Gemini fallback
-  costPerRecurringNotifBdt     Float @default(0.10)   // Recurring notification broadcast per message
+  // -- PRICING CONFIG (credit unit; TEXT/SMART_BOT use a global fixed tier formula instead, see wallet/text-tier-pricing.ts) --
+  costPerVoiceMsgCredit      Float @default(40)  // For processing audio voice notes
+  costPerImageCredit         Float @default(8)   // Customer image — Gemini Vision API path
+  costPerImageLocalCredit    Float @default(4)   // Customer image — local Ollama path (no API)
+  costPerAnalyzeCredit       Float @default(8)   // Admin uploading product
+  costPerAiGenerateCredit    Float @default(4)   // AI text generation (description/broadcast draft)
+  costPerKeywordReplyCredit     Float @default(1)   // Pure keyword/template bot reply (no AI call)
+  costPerBroadcastMsgCredit     Float @default(2)   // Per broadcast message sent
+  costPerOcrLocalCredit         Float @default(1)   // OCR via local Tesseract
+  costPerOcrAiCredit            Float @default(2)   // OCR via Gemini fallback
+  costPerRecurringNotifCredit   Float @default(4)   // Recurring notification broadcast per message
   recurringNotifMode           Boolean @default(false) // When ON: ask subscribe permission after order complete/cancel
 
   // -- DUAL PHOTO MODE (legacy single-pair, kept for backward compat) --
@@ -336,7 +394,7 @@ model Page {
   smsGatewayEnabled  Boolean  @default(false)
   receivedSms        ReceivedSms[]
 
-  costPerMemoPrintBdt  Float @default(0.10)
+  costPerMemoPrintCredit  Float @default(4)
 
   @@index([masterPageId])
 }
@@ -564,6 +622,7 @@ model Order {
   // revenue the same way ADMIN_ADJUSTMENT wallet transactions are excluded.
   loyaltyDiscountAmount   Float @default(0)
   happyHourDiscountAmount Float @default(0)
+  milestoneDiscountAmount Float @default(0)
 
   // V28: snapshot of the milestone reward granted on this order, if any —
   // {interval, rewardType, productId, productName, qty}. Null = none.
@@ -620,10 +679,11 @@ model MilestoneReward {
   pageId        Int
   page          Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
   orderInterval Int
-  rewardType    String   // "FREE_ITEM" | "FREE_DELIVERY"
+  rewardType    String   // "FREE_ITEM" | "FREE_DELIVERY" | "DISCOUNT"
   productId     Int?     // set when rewardType = FREE_ITEM
   product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
   qty           Int      @default(1)
+  discountPercent Float? // set when rewardType = DISCOUNT — % off order subtotal
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -1005,12 +1065,30 @@ model WalletTransaction {
   pageId      Int
   page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
   type        String // RECHARGE, DEDUCT_TEXT, DEDUCT_VOICE, DEDUCT_IMAGE, DEDUCT_ADMIN_VISION, DEDUCT_BASE_FEE
-  amountBdt   Float // Positive for recharge, Negative for deduction
+  amountCredit Float // Positive for recharge, Negative for deduction (credit unit, not BDT)
   description String? // e.g. "Voice message processed", "New product Vision analyzed"
   provider    String? // gemini | openai | local | null
   createdAt   DateTime @default(now())
 
   @@index([pageId])
+}
+
+// Admin-managed fixed recharge packages (e.g. ৳2000 → 75,000 credit). Not a linear
+// rate — each package is its own priceBdt/credits pair, shown to page owners on
+// the Wallet recharge screen alongside a custom-amount option (see WalletRechargeRequest).
+model CreditPackage {
+  id        Int      @id @default(autoincrement())
+  name      String? // optional display label, e.g. "Starter", "Growth"
+  priceBdt  Float
+  credits   Int
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rechargeRequests WalletRechargeRequest[]
+
+  @@index([isActive])
 }
 
 // V26: Real AI token usage per call — priced with official provider rates
@@ -1035,7 +1113,10 @@ model WalletRechargeRequest {
   id            Int      @id @default(autoincrement())
   pageId        Int
   page          Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  amountBdt     Float
+  amountBdt     Float // real BDT amount the customer actually paid
+  creditsAmount Float    @default(0) // credits this request grants (snapshotted at submit time)
+  packageId     Int?
+  package       CreditPackage? @relation(fields: [packageId], references: [id], onDelete: SetNull)
   method        String   // bkash | nagad | bank | manual
   transactionId String
   note          String?
@@ -1049,6 +1130,7 @@ model WalletRechargeRequest {
 
   @@index([pageId])
   @@index([status])
+  @@index([packageId])
 }
 
 model SpamCheckLog {
@@ -1249,12 +1331,12 @@ model RecurringSubscriber {
 
 // SMS received on merchant's phone via Android SMS forwarder app — used for payment verification
 // SMS received on merchant's phone via Android SMS forwarder app — used for payment verification
-// pageId=null means it's from the chatcat admin's own phone (for billing subscription payments)
+// pageId=null means it's from the FlamboyAI admin's own phone (for billing subscription payments)
 model ReceivedSms {
   id          String   @id @default(cuid())
   pageId      Int?
   page        Page?    @relation(fields: [pageId], references: [id], onDelete: Cascade)
-  isAdminSms  Boolean  @default(false) // true = chatcat admin billing SMS
+  isAdminSms  Boolean  @default(false) // true = FlamboyAI admin billing SMS
   rawText     String
   method      String   // "bkash" | "nagad" | "rocket"
   txId        String?

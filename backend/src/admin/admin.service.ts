@@ -16,6 +16,8 @@ import { FacebookService } from '../facebook/facebook.service';
 import { TelegramNotificationService } from '../telegram/telegram-notification.service';
 import { WaConnectRequestService } from '../whatsapp/wa-connect-request.service';
 import { AgentBehaviorConfig } from '../agents/agent-behavior-config.interface';
+import { AuthService } from '../auth/auth.service';
+import { PartnerService } from '../partner/partner.service';
 
 export interface CallServerConfig {
   id: string;
@@ -93,6 +95,8 @@ export class AdminService {
     private readonly facebook: FacebookService,
     private readonly telegram: TelegramNotificationService,
     private readonly waConnectRequests: WaConnectRequestService,
+    private readonly authService: AuthService,
+    private readonly partner: PartnerService,
   ) {}
 
   async overview() {
@@ -827,20 +831,19 @@ export class AdminService {
         id: true,
         pageId: true,
         pageName: true,
-        walletBalanceBdt: true,
-        costPerKeywordReplyBdt: true,
-        costPerTextMsgBdt: true,
-        costPerVoiceMsgBdt: true,
-        costPerImageBdt: true,
-        costPerImageLocalBdt: true,
-        costPerOcrLocalBdt: true,
-        costPerOcrAiBdt: true,
-        costPerAnalyzeBdt: true,
-        costPerAiGenerateBdt: true,
-        costPerBroadcastMsgBdt: true,
-        costPerRecurringNotifBdt: true,
-        costPerCommentReplyBdt: true,
-        costPerMemoPrintBdt: true,
+        creditBalance: true,
+        costPerKeywordReplyCredit: true,
+        costPerVoiceMsgCredit: true,
+        costPerImageCredit: true,
+        costPerImageLocalCredit: true,
+        costPerOcrLocalCredit: true,
+        costPerOcrAiCredit: true,
+        costPerAnalyzeCredit: true,
+        costPerAiGenerateCredit: true,
+        costPerBroadcastMsgCredit: true,
+        costPerRecurringNotifCredit: true,
+        costPerCommentReplyCredit: true,
+        costPerMemoPrintCredit: true,
         subscriptionStatus: true,
         nextBillingDate: true,
       },
@@ -858,11 +861,11 @@ export class AdminService {
 
   async rechargePageWallet(
     pageId: number,
-    amountBdt: number,
+    creditAmount: number,
     transactionId: string,
     note?: string,
   ) {
-    if (amountBdt <= 0) throw new NotFoundException('Amount must be positive');
+    if (creditAmount <= 0) throw new NotFoundException('Amount must be positive');
     const page = await this.prisma.page.findUnique({
       where: { id: pageId },
       select: { id: true },
@@ -873,7 +876,7 @@ export class AdminService {
       await tx.page.update({
         where: { id: pageId },
         data: {
-          walletBalanceBdt: { increment: amountBdt },
+          creditBalance: { increment: creditAmount },
           subscriptionStatus: 'ACTIVE',
         },
       });
@@ -881,7 +884,7 @@ export class AdminService {
         data: {
           pageId,
           type: 'RECHARGE',
-          amountBdt,
+          amountCredit: creditAmount,
           description: note
             ? `${note} (Trx: ${transactionId})`
             : `Recharge via Trx: ${transactionId}`,
@@ -889,17 +892,17 @@ export class AdminService {
       });
     });
 
-    return { success: true, amountBdt };
+    return { success: true, creditAmount };
   }
 
   /**
-   * Manual admin balance correction — unlike rechargePageWallet, amountBdt
+   * Manual admin balance correction — unlike rechargePageWallet, creditAmount
    * may be negative (to deduct) and this never force-activates the
    * subscription, since an arbitrary adjustment isn't necessarily a paid
    * top-up.
    */
-  async adjustPageWallet(pageId: number, amountBdt: number, note?: string) {
-    if (!amountBdt) throw new BadRequestException('amountBdt must be non-zero');
+  async adjustPageWallet(pageId: number, creditAmount: number, note?: string) {
+    if (!creditAmount) throw new BadRequestException('creditAmount must be non-zero');
     const page = await this.prisma.page.findUnique({
       where: { id: pageId },
       select: { id: true },
@@ -909,37 +912,36 @@ export class AdminService {
     await this.prisma.$transaction(async (tx) => {
       await tx.page.update({
         where: { id: pageId },
-        data: { walletBalanceBdt: { increment: amountBdt } },
+        data: { creditBalance: { increment: creditAmount } },
       });
       await tx.walletTransaction.create({
         data: {
           pageId,
           type: 'ADMIN_ADJUSTMENT',
-          amountBdt,
-          description: note || `Manual admin ${amountBdt > 0 ? 'credit' : 'deduction'}`,
+          amountCredit: creditAmount,
+          description: note || `Manual admin ${creditAmount > 0 ? 'credit' : 'deduction'}`,
         },
       });
     });
 
-    return { success: true, amountBdt };
+    return { success: true, creditAmount };
   }
 
   async updatePagePricing(
     pageId: number,
     pricing: {
-      costPerTextMsgBdt?: number;
-      costPerVoiceMsgBdt?: number;
-      costPerImageBdt?: number;
-      costPerImageLocalBdt?: number;
-      costPerAnalyzeBdt?: number;
-      costPerOcrLocalBdt?: number;
-      costPerOcrAiBdt?: number;
-      costPerRecurringNotifBdt?: number;
-      costPerBroadcastMsgBdt?: number;
-      costPerKeywordReplyBdt?: number;
-      costPerAiGenerateBdt?: number;
-      costPerMemoPrintBdt?: number;
-      costPerCommentReplyBdt?: number;
+      costPerVoiceMsgCredit?: number;
+      costPerImageCredit?: number;
+      costPerImageLocalCredit?: number;
+      costPerAnalyzeCredit?: number;
+      costPerOcrLocalCredit?: number;
+      costPerOcrAiCredit?: number;
+      costPerRecurringNotifCredit?: number;
+      costPerBroadcastMsgCredit?: number;
+      costPerKeywordReplyCredit?: number;
+      costPerAiGenerateCredit?: number;
+      costPerMemoPrintCredit?: number;
+      costPerCommentReplyCredit?: number;
     },
   ) {
     const page = await this.prisma.page.findUnique({
@@ -948,19 +950,18 @@ export class AdminService {
     });
     if (!page) throw new NotFoundException('Page not found');
     const data: any = {};
-    if (pricing.costPerTextMsgBdt !== undefined) data.costPerTextMsgBdt = pricing.costPerTextMsgBdt;
-    if (pricing.costPerVoiceMsgBdt !== undefined) data.costPerVoiceMsgBdt = pricing.costPerVoiceMsgBdt;
-    if (pricing.costPerImageBdt !== undefined) data.costPerImageBdt = pricing.costPerImageBdt;
-    if (pricing.costPerImageLocalBdt !== undefined) data.costPerImageLocalBdt = pricing.costPerImageLocalBdt;
-    if (pricing.costPerAnalyzeBdt !== undefined) data.costPerAnalyzeBdt = pricing.costPerAnalyzeBdt;
-    if (pricing.costPerOcrLocalBdt !== undefined) data.costPerOcrLocalBdt = pricing.costPerOcrLocalBdt;
-    if (pricing.costPerOcrAiBdt !== undefined) data.costPerOcrAiBdt = pricing.costPerOcrAiBdt;
-    if (pricing.costPerRecurringNotifBdt !== undefined) data.costPerRecurringNotifBdt = pricing.costPerRecurringNotifBdt;
-    if (pricing.costPerBroadcastMsgBdt !== undefined) data.costPerBroadcastMsgBdt = pricing.costPerBroadcastMsgBdt;
-    if (pricing.costPerKeywordReplyBdt !== undefined) data.costPerKeywordReplyBdt = pricing.costPerKeywordReplyBdt;
-    if (pricing.costPerAiGenerateBdt !== undefined) data.costPerAiGenerateBdt = pricing.costPerAiGenerateBdt;
-    if (pricing.costPerMemoPrintBdt !== undefined) data.costPerMemoPrintBdt = pricing.costPerMemoPrintBdt;
-    if (pricing.costPerCommentReplyBdt !== undefined) data.costPerCommentReplyBdt = pricing.costPerCommentReplyBdt;
+    if (pricing.costPerVoiceMsgCredit !== undefined) data.costPerVoiceMsgCredit = pricing.costPerVoiceMsgCredit;
+    if (pricing.costPerImageCredit !== undefined) data.costPerImageCredit = pricing.costPerImageCredit;
+    if (pricing.costPerImageLocalCredit !== undefined) data.costPerImageLocalCredit = pricing.costPerImageLocalCredit;
+    if (pricing.costPerAnalyzeCredit !== undefined) data.costPerAnalyzeCredit = pricing.costPerAnalyzeCredit;
+    if (pricing.costPerOcrLocalCredit !== undefined) data.costPerOcrLocalCredit = pricing.costPerOcrLocalCredit;
+    if (pricing.costPerOcrAiCredit !== undefined) data.costPerOcrAiCredit = pricing.costPerOcrAiCredit;
+    if (pricing.costPerRecurringNotifCredit !== undefined) data.costPerRecurringNotifCredit = pricing.costPerRecurringNotifCredit;
+    if (pricing.costPerBroadcastMsgCredit !== undefined) data.costPerBroadcastMsgCredit = pricing.costPerBroadcastMsgCredit;
+    if (pricing.costPerKeywordReplyCredit !== undefined) data.costPerKeywordReplyCredit = pricing.costPerKeywordReplyCredit;
+    if (pricing.costPerAiGenerateCredit !== undefined) data.costPerAiGenerateCredit = pricing.costPerAiGenerateCredit;
+    if (pricing.costPerMemoPrintCredit !== undefined) data.costPerMemoPrintCredit = pricing.costPerMemoPrintCredit;
+    if (pricing.costPerCommentReplyCredit !== undefined) data.costPerCommentReplyCredit = pricing.costPerCommentReplyCredit;
     await this.prisma.page.update({ where: { id: pageId }, data });
     return { success: true };
   }
@@ -972,19 +973,21 @@ export class AdminService {
   );
 
   private readonly DEFAULT_GLOBAL_PRICING = {
-    costPerKeywordReplyBdt: 0.02,
-    costPerTextMsgBdt: 0.05,
-    costPerImageBdt: 0.20,
-    costPerImageLocalBdt: 0.10,
-    costPerOcrLocalBdt: 0.02,
-    costPerOcrAiBdt: 0.05,
-    costPerVoiceMsgBdt: 1.00,
-    costPerAnalyzeBdt: 0.20,
-    costPerAiGenerateBdt: 0.10,
-    costPerBroadcastMsgBdt: 0.05,
-    costPerRecurringNotifBdt: 0.10,
-    costPerCommentReplyBdt: 0.05,
-    costPerMemoPrintBdt: 0.10,
+    costPerKeywordReplyCredit: 1,
+    costPerImageCredit: 8,
+    costPerImageLocalCredit: 4,
+    costPerOcrLocalCredit: 1,
+    costPerOcrAiCredit: 2,
+    costPerVoiceMsgCredit: 40,
+    costPerAnalyzeCredit: 8,
+    costPerAiGenerateCredit: 4,
+    costPerBroadcastMsgCredit: 2,
+    costPerRecurringNotifCredit: 4,
+    costPerCommentReplyCredit: 2,
+    costPerMemoPrintCredit: 4,
+    // Global custom-recharge conversion rate (not a Page column — excluded
+    // from updatePagePricing/applyPricingToAll's Page-update loops below).
+    creditsPerBdt: 40,
   };
 
   private _readGlobalPricing(): typeof this.DEFAULT_GLOBAL_PRICING {
@@ -1019,34 +1022,34 @@ export class AdminService {
   }
 
   async applyPricingToAll(pricing: {
-    costPerTextMsgBdt?: number;
-    costPerVoiceMsgBdt?: number;
-    costPerImageBdt?: number;
-    costPerImageLocalBdt?: number;
-    costPerAnalyzeBdt?: number;
-    costPerAiGenerateBdt?: number;
-    costPerOcrLocalBdt?: number;
-    costPerOcrAiBdt?: number;
-    costPerRecurringNotifBdt?: number;
-    costPerBroadcastMsgBdt?: number;
-    costPerKeywordReplyBdt?: number;
-    costPerMemoPrintBdt?: number;
-    costPerCommentReplyBdt?: number;
+    costPerVoiceMsgCredit?: number;
+    costPerImageCredit?: number;
+    costPerImageLocalCredit?: number;
+    costPerAnalyzeCredit?: number;
+    costPerAiGenerateCredit?: number;
+    costPerOcrLocalCredit?: number;
+    costPerOcrAiCredit?: number;
+    costPerRecurringNotifCredit?: number;
+    costPerBroadcastMsgCredit?: number;
+    costPerKeywordReplyCredit?: number;
+    costPerMemoPrintCredit?: number;
+    costPerCommentReplyCredit?: number;
+    creditsPerBdt?: number;
   }) {
     const data: any = {};
-    if (pricing.costPerTextMsgBdt !== undefined) data.costPerTextMsgBdt = pricing.costPerTextMsgBdt;
-    if (pricing.costPerVoiceMsgBdt !== undefined) data.costPerVoiceMsgBdt = pricing.costPerVoiceMsgBdt;
-    if (pricing.costPerImageBdt !== undefined) data.costPerImageBdt = pricing.costPerImageBdt;
-    if (pricing.costPerImageLocalBdt !== undefined) data.costPerImageLocalBdt = pricing.costPerImageLocalBdt;
-    if (pricing.costPerAnalyzeBdt !== undefined) data.costPerAnalyzeBdt = pricing.costPerAnalyzeBdt;
-    if (pricing.costPerAiGenerateBdt !== undefined) data.costPerAiGenerateBdt = pricing.costPerAiGenerateBdt;
-    if (pricing.costPerOcrLocalBdt !== undefined) data.costPerOcrLocalBdt = pricing.costPerOcrLocalBdt;
-    if (pricing.costPerOcrAiBdt !== undefined) data.costPerOcrAiBdt = pricing.costPerOcrAiBdt;
-    if (pricing.costPerRecurringNotifBdt !== undefined) data.costPerRecurringNotifBdt = pricing.costPerRecurringNotifBdt;
-    if (pricing.costPerBroadcastMsgBdt !== undefined) data.costPerBroadcastMsgBdt = pricing.costPerBroadcastMsgBdt;
-    if (pricing.costPerKeywordReplyBdt !== undefined) data.costPerKeywordReplyBdt = pricing.costPerKeywordReplyBdt;
-    if (pricing.costPerMemoPrintBdt !== undefined) data.costPerMemoPrintBdt = pricing.costPerMemoPrintBdt;
-    if (pricing.costPerCommentReplyBdt !== undefined) data.costPerCommentReplyBdt = pricing.costPerCommentReplyBdt;
+    if (pricing.costPerVoiceMsgCredit !== undefined) data.costPerVoiceMsgCredit = pricing.costPerVoiceMsgCredit;
+    if (pricing.costPerImageCredit !== undefined) data.costPerImageCredit = pricing.costPerImageCredit;
+    if (pricing.costPerImageLocalCredit !== undefined) data.costPerImageLocalCredit = pricing.costPerImageLocalCredit;
+    if (pricing.costPerAnalyzeCredit !== undefined) data.costPerAnalyzeCredit = pricing.costPerAnalyzeCredit;
+    if (pricing.costPerAiGenerateCredit !== undefined) data.costPerAiGenerateCredit = pricing.costPerAiGenerateCredit;
+    if (pricing.costPerOcrLocalCredit !== undefined) data.costPerOcrLocalCredit = pricing.costPerOcrLocalCredit;
+    if (pricing.costPerOcrAiCredit !== undefined) data.costPerOcrAiCredit = pricing.costPerOcrAiCredit;
+    if (pricing.costPerRecurringNotifCredit !== undefined) data.costPerRecurringNotifCredit = pricing.costPerRecurringNotifCredit;
+    if (pricing.costPerBroadcastMsgCredit !== undefined) data.costPerBroadcastMsgCredit = pricing.costPerBroadcastMsgCredit;
+    if (pricing.costPerKeywordReplyCredit !== undefined) data.costPerKeywordReplyCredit = pricing.costPerKeywordReplyCredit;
+    if (pricing.costPerMemoPrintCredit !== undefined) data.costPerMemoPrintCredit = pricing.costPerMemoPrintCredit;
+    if (pricing.costPerCommentReplyCredit !== undefined) data.costPerCommentReplyCredit = pricing.costPerCommentReplyCredit;
+    // creditsPerBdt is a global rate, not a Page column — deliberately excluded from `data`.
     if (!Object.keys(data).length) return { success: false, updated: 0 };
     // Save as new global defaults so future pages & UI always show correct values
     this._writeGlobalPricing(pricing as any);
@@ -1060,13 +1063,13 @@ export class AdminService {
         id: true,
         pageId: true,
         pageName: true,
-        walletBalanceBdt: true,
+        creditBalance: true,
         subscriptionStatus: true,
         nextBillingDate: true,
         isTestPage: true,
         owner: { select: { id: true, username: true, name: true } },
       },
-      orderBy: { walletBalanceBdt: 'asc' },
+      orderBy: { creditBalance: 'asc' },
     });
   }
 
@@ -1098,6 +1101,7 @@ export class AdminService {
             owner: { select: { username: true, name: true } },
           },
         },
+        package: { select: { id: true, name: true, priceBdt: true, credits: true } },
       },
     });
   }
@@ -1114,7 +1118,7 @@ export class AdminService {
       await tx.page.update({
         where: { id: req.pageId },
         data: {
-          walletBalanceBdt: { increment: req.amountBdt },
+          creditBalance: { increment: req.creditsAmount },
           subscriptionStatus: 'ACTIVE',
         },
       });
@@ -1122,8 +1126,8 @@ export class AdminService {
         data: {
           pageId: req.pageId,
           type: 'RECHARGE',
-          amountBdt: req.amountBdt,
-          description: `${req.method.toUpperCase()} Recharge — TrxID: ${req.transactionId}`,
+          amountCredit: req.creditsAmount,
+          description: `${req.method.toUpperCase()} Recharge — ৳${req.amountBdt} → ${req.creditsAmount} credit (TrxID: ${req.transactionId})`,
         },
       });
       await tx.walletRechargeRequest.update({
@@ -1139,9 +1143,82 @@ export class AdminService {
     // Notify the client on their page Telegram that the balance was added.
     void this.telegram.notify(
       req.pageId,
-      `✅ <b>Wallet Recharge Approved</b>\n💰 ৳${req.amountBdt} আপনার balance-এ যোগ হয়েছে। ধন্যবাদ! 🎉`,
+      `✅ <b>Wallet Recharge Approved</b>\n💰 ${req.creditsAmount} credit আপনার balance-এ যোগ হয়েছে। ধন্যবাদ! 🎉`,
     );
 
+    // Agent commission: no-op unless this page's owner was referred by an agent.
+    const rechargedPage = await this.prisma.page.findUnique({
+      where: { id: req.pageId },
+      select: { ownerId: true },
+    });
+    if (rechargedPage?.ownerId) {
+      void this.partner.recordEarningIfReferred(
+        rechargedPage.ownerId,
+        'RECHARGE',
+        req.amountBdt,
+        String(req.id),
+        req.pageId,
+      );
+    }
+
+    return { success: true };
+  }
+
+  // ── Credit Packages (admin-managed fixed recharge packages) ────────────────
+
+  async listCreditPackages(includeInactive = false) {
+    return this.prisma.creditPackage.findMany({
+      where: includeInactive ? undefined : { isActive: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+  }
+
+  async createCreditPackage(data: {
+    name?: string;
+    priceBdt: number;
+    credits: number;
+    sortOrder?: number;
+  }) {
+    if (!data.priceBdt || data.priceBdt <= 0) throw new BadRequestException('priceBdt must be positive');
+    if (!data.credits || data.credits <= 0) throw new BadRequestException('credits must be positive');
+    return this.prisma.creditPackage.create({
+      data: {
+        name: data.name,
+        priceBdt: data.priceBdt,
+        credits: data.credits,
+        sortOrder: data.sortOrder ?? 0,
+      },
+    });
+  }
+
+  async updateCreditPackage(
+    id: number,
+    data: Partial<{ name: string; priceBdt: number; credits: number; isActive: boolean; sortOrder: number }>,
+  ) {
+    const pkg = await this.prisma.creditPackage.findUnique({ where: { id } });
+    if (!pkg) throw new NotFoundException('Package not found');
+    return this.prisma.creditPackage.update({ where: { id }, data });
+  }
+
+  async deleteCreditPackage(id: number) {
+    const pkg = await this.prisma.creditPackage.findUnique({ where: { id } });
+    if (!pkg) throw new NotFoundException('Package not found');
+    const usedCount = await this.prisma.walletRechargeRequest.count({ where: { packageId: id } });
+    if (usedCount > 0) {
+      // Referenced by past recharge requests — soft-deactivate instead of deleting.
+      await this.prisma.creditPackage.update({ where: { id }, data: { isActive: false } });
+      return { success: true, deactivated: true };
+    }
+    await this.prisma.creditPackage.delete({ where: { id } });
+    return { success: true, deactivated: false };
+  }
+
+  async reorderCreditPackages(orderedIds: number[]) {
+    await this.prisma.$transaction(
+      orderedIds.map((id, index) =>
+        this.prisma.creditPackage.update({ where: { id }, data: { sortOrder: index } }),
+      ),
+    );
     return { success: true };
   }
 
@@ -1409,7 +1486,7 @@ export class AdminService {
     });
 
     const wb = new Workbook();
-    wb.creator = 'Chatcat';
+    wb.creator = 'FlamboyAI';
     const ws = wb.addWorksheet('Registry');
 
     ws.columns = [
@@ -1532,9 +1609,9 @@ export class AdminService {
 
   // ── Custom Domain Setup ──────────────────────────────────────────────────────
 
-  private readonly NGINX_CONF = '/etc/nginx/sites-available/chatcat-custom-domains.conf';
-  private readonly NGINX_LINK = '/etc/nginx/sites-enabled/chatcat-custom-domains.conf';
-  private readonly ADMIN_EMAIL = 'admin@chatcat.pro';
+  private readonly NGINX_CONF = '/etc/nginx/sites-available/FlamboyAI-custom-domains.conf';
+  private readonly NGINX_LINK = '/etc/nginx/sites-enabled/FlamboyAI-custom-domains.conf';
+  private readonly ADMIN_EMAIL = 'admin@flamboyai.com';
 
   private isDomainValid(domain: string): boolean {
     return /^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)+$/.test(domain);
@@ -1731,6 +1808,11 @@ server {
 
   async getRevenueReport(month?: string) {
     const USD_TO_BDT = Number(process.env.USD_TO_BDT) || 130;
+    // Wallet ledger amounts are now in credit units, not BDT — convert to real
+    // BDT-equivalent using the global rate so revenue/cost stay comparable.
+    // Approximate: package-based recharges may have a slightly different
+    // effective rate than the global custom-recharge rate.
+    const creditsPerBdt = this._readGlobalPricing().creditsPerBdt || 40;
 
     // Per-type real API cost in USD (per call)
     const PROVIDER_COST_USD: Record<string, Record<string, number>> = {
@@ -1757,7 +1839,7 @@ server {
       select: {
         id: true,
         pageName: true,
-        walletBalanceBdt: true,
+        creditBalance: true,
         subscriptionStatus: true,
         nextBillingDate: true,
         isTestPage: true,
@@ -1769,7 +1851,7 @@ server {
     const [transactions, aiUsageRows] = await Promise.all([
       this.prisma.walletTransaction.findMany({
         where: { ...dateFilter, pageId: { notIn: testPageIds } },
-        select: { pageId: true, type: true, amountBdt: true, provider: true, createdAt: true },
+        select: { pageId: true, type: true, amountCredit: true, provider: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
       }),
       // V26: real measured token usage (SMART_BOT + AI_INTENT capture it),
@@ -1811,11 +1893,12 @@ server {
       if (!pageMap[tx.pageId]) pageMap[tx.pageId] = { rechargedBdt: 0, billedBdt: 0, apiCostBdt: 0, apiCallCount: 0 };
 
       if (tx.type === 'RECHARGE') {
-        totalRevenueBdt += tx.amountBdt;
-        pageMap[tx.pageId].rechargedBdt += tx.amountBdt;
-        monthMap[monthKey].revenueBdt += tx.amountBdt;
-      } else if (tx.amountBdt < 0) {
-        const billed = Math.abs(tx.amountBdt);
+        const bdtEquivalent = tx.amountCredit / creditsPerBdt;
+        totalRevenueBdt += bdtEquivalent;
+        pageMap[tx.pageId].rechargedBdt += bdtEquivalent;
+        monthMap[monthKey].revenueBdt += bdtEquivalent;
+      } else if (tx.amountCredit < 0) {
+        const billed = Math.abs(tx.amountCredit) / creditsPerBdt;
         totalBilledBdt += billed;
         pageMap[tx.pageId].billedBdt += billed;
         pageMap[tx.pageId].apiCallCount += 1;
@@ -1848,7 +1931,7 @@ server {
           pageId: Number(pageIdStr),
           pageName: p?.pageName ?? '?',
           ownerName: p?.owner?.username ?? '?',
-          currentBalanceBdt: p?.walletBalanceBdt ?? 0,
+          currentBalanceCredit: p?.creditBalance ?? 0,
           subscriptionStatus: p?.subscriptionStatus ?? '?',
           nextBillingDate: p?.nextBillingDate ?? null,
           ...agg,
@@ -1919,5 +2002,54 @@ server {
       perPage,
       monthlyTrend,
     };
+  }
+
+  // ── Agents (resellers) ────────────────────────────────────────────────────
+  // Suspend/reactivate an agent reuses the existing role-agnostic
+  // setUserAccountStatus() (PATCH admin/users/:userId/account-status) — no
+  // dedicated agent toggle route needed.
+
+  async listAgents() {
+    return this.partner.listAgentsWithBalances();
+  }
+
+  async createAgent(body: {
+    username?: string;
+    password?: string;
+    name?: string;
+    commissionPercentRecharge?: number;
+    commissionPercentSubscription?: number;
+  }) {
+    if (!body.username || !body.password) {
+      throw new BadRequestException('username এবং password দিন');
+    }
+    return this.authService.register({
+      username: body.username,
+      password: body.password,
+      name: body.name,
+      role: 'agent',
+      isActive: true,
+      commissionPercentRecharge: body.commissionPercentRecharge,
+      commissionPercentSubscription: body.commissionPercentSubscription,
+    });
+  }
+
+  async updateAgent(
+    agentId: string,
+    data: Partial<{
+      name: string;
+      commissionPercentRecharge: number;
+      commissionPercentSubscription: number;
+    }>,
+  ) {
+    return this.partner.updateAgent(agentId, data);
+  }
+
+  async recordAgentPayout(agentId: string, amountBdt: number, note: string | undefined, adminUsername: string) {
+    return this.partner.recordPayout(agentId, amountBdt, note, adminUsername);
+  }
+
+  async getAgentEarningsLedger(agentId: string) {
+    return this.partner.getAgentEarningsLedger(agentId);
   }
 }

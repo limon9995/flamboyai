@@ -3,8 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../common/mailer.service';
 import { OrderActionTokenService } from './order-action-token.service';
 
-const API_BASE = process.env.API_BASE_URL || 'https://api.chatcat.pro';
-const DASHBOARD_BASE = 'https://app.chatcat.pro';
+const API_BASE = process.env.API_BASE_URL || 'https://api.flamboyai.com';
+const DASHBOARD_BASE = 'https://app.flamboyai.com';
 
 @Injectable()
 export class OrderOwnerMailerService {

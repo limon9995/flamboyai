@@ -148,19 +148,19 @@ export class BroadcastService {
     );
 
     // Wallet check: calculate total cost and verify sufficient balance
-    const costPerMsg = (page as any).costPerBroadcastMsgBdt ?? 0.05;
+    const costPerMsg = (page as any).costPerBroadcastMsgCredit ?? 2;
     const totalCost = costPerMsg * psids.length;
 
     if (psids.length > 0) {
       const walletOk = await this.wallet.canProcessAi(pageId);
       if (!walletOk) {
         throw new BadRequestException(
-          `Wallet balance নেই। Broadcast বন্ধ। Recharge করুন।`,
+          `Credit balance নেই। Broadcast বন্ধ। Recharge করুন।`,
         );
       }
-      if (page.walletBalanceBdt < totalCost) {
+      if (page.creditBalance < totalCost) {
         throw new BadRequestException(
-          `Insufficient balance। ${psids.length} জনকে message পাঠাতে ৳${totalCost.toFixed(2)} লাগবে, কিন্তু wallet-এ আছে ৳${page.walletBalanceBdt.toFixed(2)}।`,
+          `Insufficient balance। ${psids.length} জনকে message পাঠাতে ${totalCost.toFixed(0)} credit লাগবে, কিন্তু balance-এ আছে ${page.creditBalance.toFixed(0)} credit।`,
         );
       }
       // Deduct full cost upfront before sending
@@ -403,7 +403,7 @@ export class BroadcastService {
   async sendRecurringBroadcast(pageId: number, message: string, _fbToken?: string): Promise<{ sent: number; skipped: number }> {
     const page = await this.prisma.page.findUnique({
       where: { id: pageId },
-      select: { costPerRecurringNotifBdt: true, walletBalanceBdt: true, pageToken: true },
+      select: { costPerRecurringNotifCredit: true, creditBalance: true, pageToken: true },
     });
     const fbToken = page?.pageToken ?? _fbToken ?? '';
     if (!page) throw new NotFoundException('Page not found');
@@ -421,9 +421,9 @@ export class BroadcastService {
 
     if (!eligible.length) return { sent: 0, skipped: subs.length };
 
-    const totalCost = eligible.length * (page.costPerRecurringNotifBdt ?? 0.10);
-    if (page.walletBalanceBdt < totalCost) {
-      throw new BadRequestException(`Wallet balance insufficient. Need ৳${totalCost.toFixed(2)}, have ৳${page.walletBalanceBdt.toFixed(2)}`);
+    const totalCost = eligible.length * (page.costPerRecurringNotifCredit ?? 4);
+    if (page.creditBalance < totalCost) {
+      throw new BadRequestException(`Credit balance insufficient. Need ${totalCost.toFixed(0)} credit, have ${page.creditBalance.toFixed(0)} credit`);
     }
 
     let sent = 0;
@@ -441,16 +441,16 @@ export class BroadcastService {
     }
 
     if (sent > 0) {
-      const cost = sent * (page.costPerRecurringNotifBdt ?? 0.10);
+      const cost = sent * (page.costPerRecurringNotifCredit ?? 4);
       await this.prisma.page.update({
         where: { id: pageId },
-        data: { walletBalanceBdt: { decrement: cost } },
+        data: { creditBalance: { decrement: cost } },
       });
       await this.prisma.walletTransaction.create({
         data: {
           pageId,
           type: 'DEDUCT_RECURRING_NOTIF',
-          amountBdt: -cost,
+          amountCredit: -cost,
           description: `Recurring notification: ${sent} message(s) sent`,
         },
       });

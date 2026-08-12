@@ -27,26 +27,29 @@ type PendingApproval = {
 };
 
 const DEFAULT_PRICING = {
-  costPerKeywordReplyBdt: 0.02,
-  costPerTextMsgBdt: 0.05,
-  costPerImageBdt: 0.20,
-  costPerImageLocalBdt: 0.10,
-  costPerOcrLocalBdt: 0.02,
-  costPerOcrAiBdt: 0.05,
-  costPerVoiceMsgBdt: 1.00,
-  costPerAnalyzeBdt: 0.20,
-  costPerAiGenerateBdt: 0.10,
-  costPerBroadcastMsgBdt: 0.05,
-  costPerRecurringNotifBdt: 0.10,
-  costPerCommentReplyBdt: 0.05,
-  costPerMemoPrintBdt: 0.10,
+  costPerKeywordReplyCredit: 1,
+  costPerImageCredit: 8,
+  costPerImageLocalCredit: 4,
+  costPerOcrLocalCredit: 1,
+  costPerOcrAiCredit: 2,
+  costPerVoiceMsgCredit: 40,
+  costPerAnalyzeCredit: 8,
+  costPerAiGenerateCredit: 4,
+  costPerBroadcastMsgCredit: 2,
+  costPerRecurringNotifCredit: 4,
+  costPerCommentReplyCredit: 2,
+  costPerMemoPrintCredit: 4,
 };
 
+// Global pricing JSON also carries `creditsPerBdt` (the custom-recharge rate) —
+// that's not a Page column, so it's stripped out before this is spread into
+// a page.create()/update() call.
 function readGlobalPricing(): typeof DEFAULT_PRICING {
   try {
     const file = path.join(process.cwd(), 'storage', 'global-pricing.json');
     if (fs.existsSync(file)) {
-      return { ...DEFAULT_PRICING, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
+      const { creditsPerBdt, ...rest } = JSON.parse(fs.readFileSync(file, 'utf8'));
+      return { ...DEFAULT_PRICING, ...rest };
     }
   } catch {}
   return { ...DEFAULT_PRICING };
@@ -77,8 +80,14 @@ export class FacebookService {
     process.env.FB_OAUTH_STATE_SECRET || this.appSecret || 'dfbot_state_secret';
   private readonly redirectUri =
     process.env.FB_REDIRECT_URI || 'http://localhost:3000/facebook/callback';
+  // pages_manage_engagement and pages_manage_posts are gated behind Meta
+  // Business Verification (currently not passing — see devtools_compliance /
+  // app_review requirements) and get rejected as "Invalid Scopes" by the
+  // OAuth dialog when requested. Dropped for now so login isn't blocked;
+  // re-add pages_manage_engagement once verification passes to restore the
+  // Facebook comment auto-reply feature (pages_manage_posts is unused).
   private readonly oauthScope =
-    'pages_show_list,pages_read_engagement,pages_messaging,pages_manage_metadata,pages_manage_engagement,pages_manage_posts';
+    'pages_show_list,pages_read_engagement,pages_messaging,pages_manage_metadata';
   private readonly pendingOAuthResults = new Map<string, PendingOAuthResult>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
 
@@ -395,6 +404,9 @@ export class FacebookService {
   }
 
   getFrontendBaseUrl() {
+    const dashboardUrl = String(process.env.DASHBOARD_URL || '').trim();
+    if (dashboardUrl) return dashboardUrl.replace(/\/+$/, '');
+
     const landingUrl = String(process.env.LANDING_PAGE_URL || '').trim();
     if (landingUrl) return landingUrl.replace(/\/+$/, '');
 
@@ -802,8 +814,8 @@ export class FacebookService {
     if (req.user.email) {
       void this.mailer.sendMail(
         req.user.email,
-        'আপনার Facebook Page Connect হয়েছে — ChatCat Pro',
-        `<p>স্বাগতম! আপনার Facebook Page <strong>${result.page.pageName}</strong> সফলভাবে ChatCat Pro-এর সাথে connect হয়েছে।</p>`,
+        'আপনার Facebook Page Connect হয়েছে — FlamboyAI',
+        `<p>স্বাগতম! আপনার Facebook Page <strong>${result.page.pageName}</strong> সফলভাবে FlamboyAI-এর সাথে connect হয়েছে।</p>`,
       );
     }
 

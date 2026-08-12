@@ -607,7 +607,7 @@ export function ChatbotWidget({ currentPage, dark, pageId }: Props) {
                 maxWidth: '88%',
               }}
             >
-              👋 হ্যালো! আমি <strong>Liza</strong> — Chatcat-এর AI সহকারী। Orders, Courier, Bot, WhatsApp, Payment — Dashboard-এর <strong>যেকোনো পেজের</strong> যেকোনো প্রশ্ন করুন!
+              👋 হ্যালো! আমি <strong>Liza</strong> — FlamboyAI-এর AI সহকারী। Orders, Courier, Bot, WhatsApp, Payment — Dashboard-এর <strong>যেকোনো পেজের</strong> যেকোনো প্রশ্ন করুন!
             </div>
 
             {/* Suggestions */}

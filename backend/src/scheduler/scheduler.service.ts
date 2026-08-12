@@ -15,8 +15,8 @@ import { TelegramNotificationService } from '../telegram/telegram-notification.s
 import { MailerService } from '../common/mailer.service';
 import { TelegramService as AdminTelegramService } from '../common/telegram.service';
 
-const BASE_FEE_BDT = 500;
-const LOW_BALANCE_THRESHOLD_BDT = 100;
+const BASE_FEE_CREDIT = 20000;
+const LOW_BALANCE_THRESHOLD_CREDIT = 4000;
 const SUB_EXPIRY_WARNING_DAYS = 3;
 
 @Injectable()
@@ -173,7 +173,7 @@ export class SchedulerService {
         // Skip pages whose billing date hasn't arrived yet
         if (page.nextBillingDate && page.nextBillingDate > now) continue;
 
-        const result = await this.wallet.deductBaseFee(page.id, BASE_FEE_BDT);
+        const result = await this.wallet.deductBaseFee(page.id, BASE_FEE_CREDIT);
         deducted++;
         if (result.suspended) suspended++;
 
@@ -187,7 +187,7 @@ export class SchedulerService {
       }
 
       this.logger.log(
-        `[Scheduler] Base fee: deducted ${BASE_FEE_BDT} BDT from ${deducted} pages, ${suspended} suspended`,
+        `[Scheduler] Base fee: deducted ${BASE_FEE_CREDIT} credit from ${deducted} pages, ${suspended} suspended`,
       );
     } catch (e: any) {
       this.logger.error(`[Scheduler] Base fee error: ${e.message}`);
@@ -260,12 +260,12 @@ export class SchedulerService {
       const lowPages = await this.prisma.page.findMany({
         where: {
           subscriptionStatus: 'ACTIVE',
-          walletBalanceBdt: { lt: LOW_BALANCE_THRESHOLD_BDT },
+          creditBalance: { lt: LOW_BALANCE_THRESHOLD_CREDIT },
           lowBalanceNotifiedAt: null,
         },
         select: {
           id: true,
-          walletBalanceBdt: true,
+          creditBalance: true,
           businessName: true,
           owner: { select: { email: true } },
         },
@@ -274,18 +274,18 @@ export class SchedulerService {
         await this.telegram
           .notify(
             page.id,
-            `⚠️ <b>Low wallet balance</b>: ৳${page.walletBalanceBdt.toFixed(2)} remaining. Please top up to avoid service interruption.`,
+            `⚠️ <b>Low credit balance</b>: ${page.creditBalance.toFixed(0)} credit remaining. Please top up to avoid service interruption.`,
           )
           .catch(() => {});
         if (page.owner?.email) {
           await this.mailer
             .sendMail(
               page.owner.email,
-              'Chatcat wallet balance কম — Recharge করুন',
+              'FlamboyAI credit balance কম — Recharge করুন',
               `<div style="font-family:sans-serif;max-width:480px;margin:0 auto">
-                <h2 style="color:#d97706">⚠️ Wallet balance কম</h2>
-                <p>${page.businessName ?? 'আপনার পেজ'}-এর wallet balance এখন <b>৳${page.walletBalanceBdt.toFixed(2)}</b> — সার্ভিস বন্ধ হওয়া এড়াতে এখনই recharge করুন।</p>
-                <p><a href="https://app.chatcat.pro/wallet" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px">Recharge করুন</a></p>
+                <h2 style="color:#d97706">⚠️ Credit balance কম</h2>
+                <p>${page.businessName ?? 'আপনার পেজ'}-এর credit balance এখন <b>${page.creditBalance.toFixed(0)} credit</b> — সার্ভিস বন্ধ হওয়া এড়াতে এখনই recharge করুন।</p>
+                <p><a href="https://app.flamboyai.com/wallet" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#fff;text-decoration:none;border-radius:6px">Recharge করুন</a></p>
               </div>`,
             )
             .catch(() => {});
@@ -299,7 +299,7 @@ export class SchedulerService {
       // Clear the debounce flag for pages whose balance has recovered
       await this.prisma.page.updateMany({
         where: {
-          walletBalanceBdt: { gte: LOW_BALANCE_THRESHOLD_BDT },
+          creditBalance: { gte: LOW_BALANCE_THRESHOLD_CREDIT },
           lowBalanceNotifiedAt: { not: null },
         },
         data: { lowBalanceNotifiedAt: null },
@@ -330,7 +330,7 @@ export class SchedulerService {
         await this.telegram
           .notify(
             page.id,
-            `⏳ <b>Subscription renewing soon</b> on ${dateStr}. Make sure your wallet balance covers the ৳${BASE_FEE_BDT} base fee.`,
+            `⏳ <b>Subscription renewing soon</b> on ${dateStr}. Make sure your credit balance covers the ${BASE_FEE_CREDIT} credit base fee.`,
           )
           .catch(() => {});
         await this.prisma.page.update({

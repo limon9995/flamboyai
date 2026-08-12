@@ -48,6 +48,16 @@ export class WaWebhookController {
       return challenge;
     }
 
+    // Shared secret for the one-time app-level Meta Webhooks product
+    // handshake (the shared flamboyai app, not a per-client custom app).
+    if (
+      process.env.PLATFORM_VERIFY_TOKEN &&
+      token === process.env.PLATFORM_VERIFY_TOKEN
+    ) {
+      this.logger.log(`[WA Webhook] Verified via PLATFORM_VERIFY_TOKEN`);
+      return challenge;
+    }
+
     this.logger.warn(`[WA Webhook] Verification failed — unknown token`);
     return 'Verification failed';
   }

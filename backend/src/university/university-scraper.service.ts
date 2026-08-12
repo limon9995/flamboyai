@@ -41,7 +41,7 @@ export class UniversityScraperService {
 
   async scrapeNotices(scrapeUrl: string): Promise<ScrapedNotice[]> {
     const res = await fetch(scrapeUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
       signal: AbortSignal.timeout(12_000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${scrapeUrl}`);

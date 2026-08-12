@@ -11,7 +11,7 @@ export class MailerService {
 
   async sendMail(to: string, subject: string, html: string): Promise<void> {
     const apiKey = this.apiKeysService.getSync('resendApiKey');
-    const from = this.apiKeysService.getSync('resendFromEmail') || 'ChatCat Pro <onboarding@resend.dev>';
+    const from = this.apiKeysService.getSync('resendFromEmail') || 'FlamboyAI <onboarding@resend.dev>';
     if (!apiKey) {
       this.logger.warn('[Mailer] resendApiKey not configured — skipping email send');
       return;

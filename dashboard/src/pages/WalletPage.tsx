@@ -56,7 +56,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 function RechargeFlow({
   th, adminContact, paymentConfig, form, setForm, submitting, submitResult,
-  setSubmitResult, onSubmit, copiedKey, copyText, inp, card,
+  setSubmitResult, onSubmit, copiedKey, copyText, inp, card, packages, creditsPerBdt,
 }: {
   th: Theme; pageId: number; adminContact: any; paymentConfig: any;
   form: any; setForm: any; submitting: boolean;
@@ -64,10 +64,15 @@ function RechargeFlow({
   onSubmit: () => void; copiedKey: string | null;
   copyText: (k: string, v: string) => void;
   inp: React.CSSProperties; card: React.CSSProperties;
+  packages: any[]; creditsPerBdt: number;
 }) {
   const smsAuto = paymentConfig?.smsGatewayEnabled;
   const m = METHODS.find(x => x.key === form.method) || METHODS[0];
   const waUrl = adminContact?.whatsappUrl || buildWaUrl(adminContact?.phone);
+  const selectedPackage = packages.find((p: any) => p.id === form.packageId) || null;
+  const previewCredits = selectedPackage
+    ? selectedPackage.credits
+    : Math.round((Number(form.amountBdt) || 0) * creditsPerBdt);
 
   const mobileNum =
     form.method === 'bkash'  ? (adminContact?.bkash  || adminContact?.phone || '')
@@ -114,6 +119,40 @@ function RechargeFlow({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* ── Step 0: Package ── */}
+      <div style={{ ...card, padding: '16px', marginBottom: 0 }}>
+        <div style={{ fontSize: 11, color: th.muted, fontWeight: 700, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+          ধাপ ০ — কত Credit চান বেছে নিন
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+          {packages.map((pkg: any) => {
+            const sel = form.packageId === pkg.id;
+            return (
+              <button key={pkg.id} onClick={() => setForm((f: any) => ({ ...f, packageId: pkg.id, amountBdt: String(pkg.priceBdt) }))} style={{
+                border: `2px solid ${sel ? th.accent : (th.border as string)}`,
+                borderRadius: 12, padding: '12px 10px', cursor: 'pointer',
+                background: sel ? `${th.accent}18` : (th.card as any).background,
+                textAlign: 'left',
+              }}>
+                <div style={{ fontWeight: 800, fontSize: 13, color: th.text }}>{pkg.name || `Package`}</div>
+                <div style={{ fontSize: 12, color: th.muted, marginTop: 2 }}>৳{pkg.priceBdt.toLocaleString()}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: th.accent, marginTop: 4 }}>{pkg.credits.toLocaleString()} credit</div>
+              </button>
+            );
+          })}
+          <button onClick={() => setForm((f: any) => ({ ...f, packageId: null, amountBdt: '' }))} style={{
+            border: `2px solid ${form.packageId === null ? th.accent : (th.border as string)}`,
+            borderRadius: 12, padding: '12px 10px', cursor: 'pointer',
+            background: form.packageId === null ? `${th.accent}18` : (th.card as any).background,
+            textAlign: 'left',
+          }}>
+            <div style={{ fontWeight: 800, fontSize: 13, color: th.text }}>Custom Amount</div>
+            <div style={{ fontSize: 12, color: th.muted, marginTop: 2 }}>নিজের মতো টাকা লিখুন</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: th.accent, marginTop: 4 }}>1 ৳ = {creditsPerBdt} credit</div>
+          </button>
+        </div>
+      </div>
 
       {/* ── Step 1: Method ── */}
       <div style={{ ...card, padding: '16px', marginBottom: 0 }}>
@@ -318,8 +357,12 @@ function RechargeFlow({
             <div style={{ position: 'relative' }}>
               <span style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', fontWeight: 800, fontSize: 16, color: th.muted }}>৳</span>
               <input style={{ ...inp, paddingLeft: 30 }} type="number" min="10" placeholder="500"
+                readOnly={!!selectedPackage}
                 value={form.amountBdt} onChange={e => setForm((f: any) => ({ ...f, amountBdt: e.target.value }))} />
             </div>
+            {Number(form.amountBdt) > 0 && (
+              <div style={{ fontSize: 12, color: th.accent, fontWeight: 700, marginTop: 4 }}>= {previewCredits.toLocaleString()} credit</div>
+            )}
           </div>
           <div>
             <label style={{ fontSize: 12, color: th.muted, display: 'block', marginBottom: 5, fontWeight: 600 }}>
@@ -361,6 +404,8 @@ export default function WalletPage({
   const [requests, setRequests]   = useState<any[]>([]);
   const [adminContact, setAdminContact] = useState<any>(null);
   const [paymentConfig, setPaymentConfig] = useState<any>(null);
+  const [packages, setPackages]   = useState<any[]>([]);
+  const [creditsPerBdt, setCreditsPerBdt] = useState(40);
   const [loading, setLoading]     = useState(true);
   const [submitResult, setSubmitResult] = useState<'auto' | 'manual' | null>(null);
 
@@ -372,8 +417,8 @@ export default function WalletPage({
   };
 
   // Recharge form
-  const [form, setForm] = useState({
-    amountBdt: '', method: 'bkash', transactionId: '', note: '',
+  const [form, setForm] = useState<{ packageId: number | null; amountBdt: string; method: string; transactionId: string; note: string }>({
+    packageId: null, amountBdt: '', method: 'bkash', transactionId: '', note: '',
   });
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab]   = useState<'recharge' | 'history' | 'requests'>('recharge');
@@ -381,17 +426,22 @@ export default function WalletPage({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [w, t, r, billing] = await Promise.all([
+      const [w, t, r, billing, pkgData] = await Promise.all([
         request<any>(`${API_BASE}/client-dashboard/${pageId}/wallet`),
         request<any[]>(`${API_BASE}/client-dashboard/${pageId}/wallet/transactions`),
         request<any[]>(`${API_BASE}/client-dashboard/${pageId}/wallet/recharge-requests`),
         request<any>(`${API_BASE}/billing/status`).catch(() => null),
+        request<any>(`${API_BASE}/client-dashboard/${pageId}/wallet/packages`).catch(() => null),
       ]);
       setWallet(w);
       setTxns(t || []);
       setRequests(r || []);
       if (billing?.adminContact) setAdminContact(billing.adminContact);
       if (billing?.paymentConfig) setPaymentConfig(billing.paymentConfig);
+      if (pkgData) {
+        setPackages(pkgData.packages || []);
+        setCreditsPerBdt(pkgData.creditsPerBdt ?? 40);
+      }
     } catch {
       onToast('Wallet data লোড হয়নি', 'error');
     } finally {
@@ -402,8 +452,8 @@ export default function WalletPage({
   useEffect(() => { load(); }, [load]);
 
   const submit = async () => {
-    if (!form.amountBdt || Number(form.amountBdt) <= 0) {
-      onToast('সঠিক amount দিন', 'error'); return;
+    if (!form.packageId && (!form.amountBdt || Number(form.amountBdt) <= 0)) {
+      onToast('একটি package বেছে নিন অথবা সঠিক amount দিন', 'error'); return;
     }
     if (!form.transactionId.trim()) {
       onToast('Transaction ID দিন', 'error'); return;
@@ -413,7 +463,8 @@ export default function WalletPage({
       const res = await request<any>(`${API_BASE}/client-dashboard/${pageId}/wallet/recharge-request`, {
         method: 'POST',
         body: JSON.stringify({
-          amountBdt: Number(form.amountBdt),
+          packageId: form.packageId || undefined,
+          amountBdt: form.packageId ? undefined : Number(form.amountBdt),
           method: form.method,
           transactionId: form.transactionId.trim(),
           note: form.note.trim() || undefined,
@@ -426,7 +477,7 @@ export default function WalletPage({
         setSubmitResult('manual');
         onToast('✅ Recharge request জমা হয়েছে! Admin approve করলে balance যোগ হবে।', 'success');
       }
-      setForm({ amountBdt: '', method: 'bkash', transactionId: '', note: '' });
+      setForm({ packageId: null, amountBdt: '', method: 'bkash', transactionId: '', note: '' });
       load();
     } catch (e: any) {
       onToast(e.message || 'Request জমা হয়নি', 'error');
@@ -438,7 +489,7 @@ export default function WalletPage({
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><Spinner /></div>;
 
   const isSuspended = wallet?.subscriptionStatus === 'SUSPENDED';
-  const balance = wallet?.walletBalanceBdt ?? 0;
+  const balance = wallet?.creditBalance ?? 0;
   const pendingCount = requests.filter((r: any) => r.status === 'pending').length;
 
   const inp: React.CSSProperties = { ...th.input, width: '100%', boxSizing: 'border-box' };
@@ -451,15 +502,15 @@ export default function WalletPage({
         ...card,
         background: isSuspended
           ? 'linear-gradient(135deg,#7f1d1d,#991b1b)'
-          : balance < 50
+          : balance < 4000
             ? 'linear-gradient(135deg,#78350f,#92400e)'
             : 'linear-gradient(135deg,#1e3a5f,#1d4ed8)',
         color: '#fff',
         marginBottom: 20,
       }}>
-        <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 6 }}>💰 Wallet Balance</div>
+        <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 6 }}>💰 Credit Balance</div>
         <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: '-1px' }}>
-          ৳ {fmt(balance)}
+          {Math.round(balance).toLocaleString('en-BD')} <span style={{ fontSize: 20, opacity: 0.85 }}>Credit</span>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
           <span style={{
@@ -473,7 +524,7 @@ export default function WalletPage({
               Balance zero — bot AI বন্ধ। Recharge করুন।
             </span>
           )}
-          {!isSuspended && balance < 50 && (
+          {!isSuspended && balance < 4000 && (
             <span style={{ fontSize: 12, opacity: 0.9 }}>⚠️ Balance কম — শীঘ্রই Recharge করুন।</span>
           )}
         </div>
@@ -483,28 +534,28 @@ export default function WalletPage({
           marginTop: 16, padding: '10px 14px', borderRadius: 10,
           background: 'rgba(255,255,255,0.12)', fontSize: 12,
         }}>
-          <div style={{ fontWeight: 700, marginBottom: 6, opacity: 0.9 }}>💰 Usage Pricing (BDT)</div>
+          <div style={{ fontWeight: 700, marginBottom: 6, opacity: 0.9 }}>💰 Usage Pricing (Credit)</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 16px', fontSize: 11.5 }}>
-            <span style={{ opacity: 0.75 }}>AI Text Reply</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerTextMsgBdt ?? 0.05}</span>
+            <span style={{ opacity: 0.75 }}>AI Text / SmartBot Reply</span>
+            <span style={{ fontWeight: 700 }}>10–13+ (message length অনুযায়ী)</span>
             <span style={{ opacity: 0.75 }}>Customer Image (Vision)</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerImageBdt ?? 0.20}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerImageCredit ?? 8}</span>
             <span style={{ opacity: 0.75 }}>OCR (Local Scan)</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerOcrLocalBdt ?? 0.02}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerOcrLocalCredit ?? 1}</span>
             <span style={{ opacity: 0.75 }}>OCR (AI Fallback)</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerOcrAiBdt ?? 0.05}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerOcrAiCredit ?? 2}</span>
             <span style={{ opacity: 0.75 }}>Voice Note (STT)</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerVoiceMsgBdt ?? 1.00}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerVoiceMsgCredit ?? 40}</span>
             <span style={{ opacity: 0.75 }}>Product Auto-Analyze</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerAnalyzeBdt ?? 0.20}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerAnalyzeCredit ?? 8}</span>
             <span style={{ opacity: 0.75 }}>Broadcast (per msg)</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerBroadcastMsgBdt ?? 0.05}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerBroadcastMsgCredit ?? 2}</span>
             <span style={{ opacity: 0.75 }}>Subscriber Notification</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerRecurringNotifBdt ?? 0.10}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerRecurringNotifCredit ?? 4}</span>
             <span style={{ opacity: 0.75 }}>Comment Reply</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerCommentReplyBdt ?? 0.05}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerCommentReplyCredit ?? 2}</span>
             <span style={{ opacity: 0.75 }}>Memo Print</span>
-            <span style={{ fontWeight: 700 }}>৳ {wallet?.costPerMemoPrintBdt ?? 0.10}</span>
+            <span style={{ fontWeight: 700 }}>{wallet?.costPerMemoPrintCredit ?? 4}</span>
           </div>
         </div>
       </div>
@@ -542,6 +593,8 @@ export default function WalletPage({
           copyText={copyText}
           inp={inp}
           card={card}
+          packages={packages}
+          creditsPerBdt={creditsPerBdt}
         />
       )}
 
@@ -559,9 +612,9 @@ export default function WalletPage({
                 <div key={t.id} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   padding: '10px 14px', borderRadius: 10,
-                  background: t.amountBdt > 0
+                  background: t.amountCredit > 0
                     ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.07)',
-                  border: `1px solid ${t.amountBdt > 0 ? '#22c55e30' : '#ef444430'}`,
+                  border: `1px solid ${t.amountCredit > 0 ? '#22c55e30' : '#ef444430'}`,
                 }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>
@@ -576,9 +629,9 @@ export default function WalletPage({
                   </div>
                   <div style={{
                     fontWeight: 800, fontSize: 15,
-                    color: t.amountBdt > 0 ? '#22c55e' : '#ef4444',
+                    color: t.amountCredit > 0 ? '#22c55e' : '#ef4444',
                   }}>
-                    {t.amountBdt > 0 ? '+' : ''}৳{Math.abs(t.amountBdt).toFixed(2)}
+                    {t.amountCredit > 0 ? '+' : ''}{Math.abs(t.amountCredit).toFixed(0)} credit
                   </div>
                 </div>
               ))}
@@ -604,7 +657,7 @@ export default function WalletPage({
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 15 }}>৳ {fmt(r.amountBdt)}</div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>৳ {fmt(r.amountBdt)} → {Math.round(r.creditsAmount ?? 0).toLocaleString()} credit</div>
                       <div style={{ fontSize: 12, color: th.muted }}>
                         {METHOD_LABELS[r.method] || r.method} · TrxID: <b>{r.transactionId}</b>
                       </div>

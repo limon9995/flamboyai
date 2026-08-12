@@ -138,7 +138,7 @@ async function bootstrap() {
         return cb(null, true);
       }
       if (allowedOrigins.includes(origin)) return cb(null, true);
-      // Allow any subdomain of allowed origins (e.g. api.chatcat.pro when app.chatcat.pro is allowed)
+      // Allow any subdomain of allowed origins (e.g. api.flamboyai.com when app.flamboyai.com is allowed)
       let originHost: string;
       try {
         originHost = new URL(origin).hostname;

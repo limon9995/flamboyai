@@ -314,7 +314,7 @@ body{font-family:"Noto Sans Bengali",Georgia,serif;background:#1a1a1a;padding:14
                 `<div class="item"><span>${this.esc(i.productCode)} x${i.qty}</span><span>${this.money(i.unitPrice * i.qty)}</span></div>`,
             )
             .join('') || `<div class="item"><span>—</span></div>`;
-        return `<div class="receipt"><div class="top">CHATCAT PRO ORDER</div><div class="sep">================================</div><div class="row"><b>Order:</b> #${o.id}</div><div class="row"><b>Name:</b> ${this.esc(o.customerName || '—')}</div><div class="row"><b>Phone:</b> ${this.esc(o.phone || '—')}</div><div class="row addr"><b>Addr:</b> ${this.esc(o.address || '—')}</div><div class="sep">--------------------------------</div><div class="items">${items}</div><div class="sep">================================</div><div class="total">TOTAL: ${this.money(subtotal)}</div><div class="sep">================================</div><div class="footer">Thank you!</div></div>`;
+        return `<div class="receipt"><div class="top">FlamboyAI ORDER</div><div class="sep">================================</div><div class="row"><b>Order:</b> #${o.id}</div><div class="row"><b>Name:</b> ${this.esc(o.customerName || '—')}</div><div class="row"><b>Phone:</b> ${this.esc(o.phone || '—')}</div><div class="row addr"><b>Addr:</b> ${this.esc(o.address || '—')}</div><div class="sep">--------------------------------</div><div class="items">${items}</div><div class="sep">================================</div><div class="total">TOTAL: ${this.money(subtotal)}</div><div class="sep">================================</div><div class="footer">Thank you!</div></div>`;
       })
       .join('');
     return `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>

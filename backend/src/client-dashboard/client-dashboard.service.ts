@@ -25,6 +25,7 @@ import { TelegramService } from '../common/telegram.service';
 import { TelegramNotificationService } from '../telegram/telegram-notification.service';
 import { AdminService } from '../admin/admin.service';
 import { PricingService } from '../pricing/pricing.service';
+import { PartnerService } from '../partner/partner.service';
 import {
   haversineKm,
   isRestaurantReady,
@@ -36,6 +37,11 @@ import {
   parseBusinessHours,
   resolveDeliveryFee,
 } from '../common/restaurant-delivery';
+import {
+  CardButtonConfig,
+  MAX_CARD_BUTTONS,
+  parseCardButtons,
+} from '../common/product-card-buttons';
 
 @Injectable()
 export class ClientDashboardService {
@@ -72,6 +78,7 @@ export class ClientDashboardService {
     private readonly adminService: AdminService,
     private readonly telegramNotif: TelegramNotificationService,
     private readonly pricing: PricingService,
+    private readonly partner: PartnerService,
   ) {}
 
   // ── Summary ────────────────────────────────────────────────────────────────
@@ -361,6 +368,8 @@ export class ClientDashboardService {
     const orderUpdate: any = {};
     if (discounts.loyaltyDiscount) orderUpdate.loyaltyDiscountAmount = discounts.loyaltyDiscount;
     if (discounts.happyHourDiscount) orderUpdate.happyHourDiscountAmount = discounts.happyHourDiscount;
+    const milestoneDiscountAmount = this.pricing.computeMilestoneDiscount(rewards, subtotal);
+    if (milestoneDiscountAmount) orderUpdate.milestoneDiscountAmount = milestoneDiscountAmount;
     if (rewards.length) {
       orderUpdate.milestoneRewardAppliedJson = JSON.stringify(
         rewards.map((r) => ({ ...r, orderNumber: thisOrderNumber })),
@@ -1109,7 +1118,7 @@ Rules:
       lookup(wearingCode),
     ]);
 
-    // Deduct wallet: 2 reference + N live photos = totalImages × costPerAnalyzeBdt
+    // Deduct wallet: 2 reference + N live photos = totalImages × costPerAnalyzeCredit
     void this.walletService.deductUsage(pageId, 'DUAL_PHOTO_AI', {
       photoCount: totalImages,
     });
@@ -1414,6 +1423,8 @@ Return ONLY valid JSON (no markdown):
       restaurantLat: page.restaurantLat ?? null,
       restaurantLng: page.restaurantLng ?? null,
       deliverySlabs: parseSlabs(page.deliverySlabsJson),
+      // V29: Messenger product-card buttons — [] means "use the built-in default"
+      cardButtons: parseCardButtons(page.productCardButtonsJson),
       catalogMessengerUrl: page.catalogMessengerUrl ?? '',
       catalogSlug: page.catalogSlug ?? '',
       customDomain: page.customDomain ?? '',
@@ -1694,6 +1705,45 @@ Return ONLY valid JSON (no markdown):
       }
     }
 
+    // V29: Messenger product-card buttons — explicit sanitization (never
+    // through the generic whitelist: each row needs its type-specific fields
+    // validated and a safe id minted for postback routing).
+    if ('cardButtons' in pageFields) {
+      const raw = pageFields.cardButtons;
+      if (!Array.isArray(raw))
+        throw new BadRequestException('cardButtons must be an array');
+      if (raw.length > MAX_CARD_BUTTONS)
+        throw new BadRequestException(
+          `সর্বোচ্চ ${MAX_CARD_BUTTONS}টা button দেওয়া যাবে`,
+        );
+      const buttons: CardButtonConfig[] = raw.map((b: any, i: number) => {
+        const type = b?.type;
+        const label = String(b?.label ?? '').trim().slice(0, 30);
+        const id =
+          typeof b?.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(b.id)
+            ? b.id
+            : `btn_${Date.now().toString(36)}_${i}`;
+        if (!label) throw new BadRequestException('প্রতিটা button-এর label দিতে হবে');
+        if (type === 'order' || type === 'details') {
+          return { id, type, label };
+        }
+        if (type === 'custom') {
+          const url = typeof b?.url === 'string' ? b.url.trim() : '';
+          const replyText =
+            typeof b?.replyText === 'string' ? b.replyText.trim().slice(0, 500) : '';
+          if (url && /^https?:\/\//i.test(url)) return { id, type, label, url };
+          if (replyText) return { id, type, label, replyText };
+          throw new BadRequestException(
+            `"${label}" button-এ একটা link অথবা reply text দিতে হবে`,
+          );
+        }
+        throw new BadRequestException('Button type সঠিক নয়');
+      });
+      pagePatch.productCardButtonsJson = buttons.length
+        ? JSON.stringify(buttons)
+        : null;
+    }
+
     // Slug uniqueness pre-check: if catalogSlug is being set, verify no other page owns it
     if (typeof pagePatch.catalogSlug === 'string' && pagePatch.catalogSlug) {
       const conflict = await this.prisma.page.findUnique({
@@ -1742,7 +1792,7 @@ Return ONLY valid JSON (no markdown):
       });
       // Auto-register Telegram webhook so inline buttons & callbacks work immediately
       try {
-        const apiBase = process.env.API_BASE_URL || 'https://api.chatcat.pro';
+        const apiBase = process.env.API_BASE_URL || 'https://api.flamboyai.com';
         await this.telegramNotif.setWebhookForPage(pageId, apiBase);
       } catch { /* non-fatal */ }
     }
@@ -2127,26 +2177,36 @@ Return ONLY valid JSON (no markdown):
     const page = await this.prisma.page.findUnique({
       where: { id: pageId },
       select: {
-        walletBalanceBdt: true,
-        costPerKeywordReplyBdt: true,
-        costPerTextMsgBdt: true,
-        costPerVoiceMsgBdt: true,
-        costPerImageBdt: true,
-        costPerImageLocalBdt: true,
-        costPerOcrLocalBdt: true,
-        costPerOcrAiBdt: true,
-        costPerAnalyzeBdt: true,
-        costPerAiGenerateBdt: true,
-        costPerBroadcastMsgBdt: true,
-        costPerRecurringNotifBdt: true,
-        costPerCommentReplyBdt: true,
-        costPerMemoPrintBdt: true,
+        creditBalance: true,
+        costPerKeywordReplyCredit: true,
+        costPerVoiceMsgCredit: true,
+        costPerImageCredit: true,
+        costPerImageLocalCredit: true,
+        costPerOcrLocalCredit: true,
+        costPerOcrAiCredit: true,
+        costPerAnalyzeCredit: true,
+        costPerAiGenerateCredit: true,
+        costPerBroadcastMsgCredit: true,
+        costPerRecurringNotifCredit: true,
+        costPerCommentReplyCredit: true,
+        costPerMemoPrintCredit: true,
         subscriptionStatus: true,
         nextBillingDate: true,
       },
     });
     if (!page) throw new NotFoundException('Page not found');
     return page;
+  }
+
+  async getCreditPackagesForPage() {
+    const [packages, pricing] = await Promise.all([
+      this.prisma.creditPackage.findMany({
+        where: { isActive: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      this.adminService.getGlobalPricing(),
+    ]);
+    return { packages, creditsPerBdt: (pricing as any).creditsPerBdt ?? 40 };
   }
 
   async getWalletTransactions(pageId: number, limit = 50) {
@@ -2160,21 +2220,38 @@ Return ONLY valid JSON (no markdown):
   async submitRechargeRequest(
     pageId: number,
     body: {
-      amountBdt: number;
+      packageId?: number;
+      amountBdt?: number;
       method: string;
       transactionId: string;
       note?: string;
     },
   ) {
-    const { amountBdt, method, transactionId, note } = body;
-    if (!amountBdt || amountBdt <= 0)
-      throw new BadRequestException('Amount must be positive');
+    const { method, transactionId, note } = body;
     if (!transactionId?.trim())
       throw new BadRequestException('Transaction ID required');
 
     const allowed = ['bkash', 'nagad', 'bank', 'manual'];
     if (!allowed.includes(method))
       throw new BadRequestException('Invalid payment method');
+
+    let amountBdt: number;
+    let creditsAmount: number;
+    let packageId: number | null = null;
+    if (body.packageId) {
+      const pkg = await this.prisma.creditPackage.findUnique({ where: { id: body.packageId } });
+      if (!pkg || !pkg.isActive) throw new BadRequestException('Package পাওয়া যায়নি বা inactive');
+      amountBdt = pkg.priceBdt;
+      creditsAmount = pkg.credits;
+      packageId = pkg.id;
+    } else {
+      if (!body.amountBdt || body.amountBdt <= 0)
+        throw new BadRequestException('Amount must be positive');
+      const pricing = await this.adminService.getGlobalPricing();
+      const creditsPerBdt = (pricing as any).creditsPerBdt ?? 40;
+      amountBdt = body.amountBdt;
+      creditsAmount = Math.round(amountBdt * creditsPerBdt);
+    }
 
     // Prevent duplicate pending request for same TrxID + page
     const existing = await this.prisma.walletRechargeRequest.findFirst({
@@ -2189,6 +2266,8 @@ Return ONLY valid JSON (no markdown):
       data: {
         pageId,
         amountBdt,
+        creditsAmount,
+        packageId,
         method,
         transactionId: transactionId.trim(),
         note: note?.trim() || null,
@@ -2215,10 +2294,25 @@ Return ONLY valid JSON (no markdown):
         });
         await this.walletService.rechargeWallet(
           pageId,
-          amountBdt,
+          creditsAmount,
           `${method}:${transactionId.trim()}`,
         );
         autoVerified = true;
+
+        // Agent commission: no-op unless this page's owner was referred by an agent.
+        const ownerForCommission = await this.prisma.page.findUnique({
+          where: { id: pageId },
+          select: { ownerId: true },
+        });
+        if (ownerForCommission?.ownerId) {
+          void this.partner.recordEarningIfReferred(
+            ownerForCommission.ownerId,
+            'RECHARGE',
+            amountBdt,
+            String(req.id),
+            pageId,
+          );
+        }
       }
     }
 
@@ -2231,7 +2325,7 @@ Return ONLY valid JSON (no markdown):
       void this.telegram.sendMessage(
         `✅ <b>Wallet Auto-Verified!</b>\n` +
           `🏪 Page: ${page?.pageName || pageId}\n` +
-          `💵 Amount: ৳${amountBdt}\n` +
+          `💵 Amount: ৳${amountBdt} → ${creditsAmount} credit\n` +
           `📱 Method: ${method} | TxID: ${transactionId.trim()}`,
       );
       return {
@@ -2248,7 +2342,7 @@ Return ONLY valid JSON (no markdown):
     void this.telegram.sendMessageWithButtons(
       `💰 <b>নতুন Wallet Recharge Request!</b>\n` +
         `🏪 Page: ${page?.pageName || pageId}\n` +
-        `💵 Amount: ${amountBdt} BDT\n` +
+        `💵 Amount: ৳${amountBdt} → ${creditsAmount} credit\n` +
         `📱 Method: ${method}\n` +
         `🔖 TxID: ${transactionId.trim()}\n` +
         (note ? `📝 Note: ${note}\n` : '') +
@@ -2269,6 +2363,7 @@ Return ONLY valid JSON (no markdown):
       where: { pageId },
       orderBy: { createdAt: 'desc' },
       take: 30,
+      include: { package: { select: { id: true, name: true } } },
     });
   }
 

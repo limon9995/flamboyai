@@ -1,5 +1,5 @@
 -- V18: Image recognition migration
--- Run on VPS with: psql -U chatcat -d chatcatpro < v18_image_recognition.sql
+-- Run on VPS with: psql -U FlamboyAI -d flamboyai < v18_image_recognition.sql
 -- Or copy-paste into psql directly
 
 -- Product table: new image recognition metadata columns

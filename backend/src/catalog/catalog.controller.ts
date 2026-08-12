@@ -143,9 +143,9 @@ function poweredByBadge(): string {
   if (!LANDING_URL) return '';
   return `
 <style>${POWERED_CSS}</style>
-<a class="pwby" href="${esc(LANDING_URL)}" target="_blank" rel="noopener" title="ChatCat Pro দিয়ে তৈরি">
+<a class="pwby" href="${esc(LANDING_URL)}" target="_blank" rel="noopener" title="FlamboyAI দিয়ে তৈরি">
   <div class="pwby-icon">🤖</div>
-  <span class="pwby-text">Powered by </span><span class="pwby-brand">ChatCat Pro</span>
+  <span class="pwby-text">Powered by </span><span class="pwby-brand">FlamboyAI</span>
 </a>`;
 }
 
@@ -1125,7 +1125,7 @@ export class CatalogController {
     const orderText = encodeURIComponent(`${p.code} order করতে চাই`);
     const selectText = encodeURIComponent(`SELECT_PRODUCT:${p.code}`);
     const priceFormatted = Number(p.price).toLocaleString('bn-BD');
-    const productPublicUrl = `https://api.chatcat.pro/catalog/${esc(page.id)}/product/${esc(p.code)}`;
+    const productPublicUrl = `https://api.flamboyai.com/catalog/${esc(page.id)}/product/${esc(p.code)}`;
     const ogOfferBit =
       Number(p.originalPrice) > Number(p.price) && Number(p.price) > 0
         ? `🔥 ${Math.round((1 - Number(p.price) / Number(p.originalPrice)) * 100)}% ছাড় — আগের দাম ${currency}${Number(p.originalPrice).toLocaleString()} · `
@@ -2066,10 +2066,10 @@ async function woCheckMilestone(){
     if(!d.enabled){ box.style.display='none'; return; }
     var msg=null;
     if(d.rewards&&d.rewards.length){
-      var whats=d.rewards.map(function(r){ return r.rewardType==='FREE_DELIVERY'?'ফ্রি ডেলিভারি':('ফ্রি '+r.productName); });
+      var whats=d.rewards.map(function(r){ return r.rewardType==='FREE_DELIVERY'?'ফ্রি ডেলিভারি':(r.rewardType==='DISCOUNT'?(r.discountPercent+'% ছাড়'):('ফ্রি '+r.productName)); });
       msg='🎁 এই অর্ডারেই আপনি পাচ্ছেন '+whats.join(' + ')+'!';
     } else if(d.next){
-      var what2=d.next.rewardType==='FREE_DELIVERY'?'ফ্রি ডেলিভারি':('ফ্রি '+d.next.productName);
+      var what2=d.next.rewardType==='FREE_DELIVERY'?'ফ্রি ডেলিভারি':(d.next.rewardType==='DISCOUNT'?(d.next.discountPercent+'% ছাড়'):('ফ্রি '+d.next.productName));
       msg='🎁 আরও '+d.next.ordersAway+'টা অর্ডার করলে পাবেন '+what2+'!';
     }
     if(!msg){ box.style.display='none'; return; }
@@ -2330,7 +2330,7 @@ ${poweredByBadge()}
         : '';
 
     const catalogSlugOrId = page.catalogSlug || page.id;
-    const catalogPublicUrl = `https://api.chatcat.pro/catalog/${catalogSlugOrId}`;
+    const catalogPublicUrl = `https://api.flamboyai.com/catalog/${catalogSlugOrId}`;
     const ogDesc = `${esc(page.name)}-এর সব product দেখুন। ${products.length > 0 ? `${products.length}টি product available।` : ''} পছন্দের product বেছে Messenger-এ order করুন।`;
     // V21: Catalog WhatsApp share
     const catalogWaShare = `https://wa.me/?text=${encodeURIComponent(`${page.name}-এর সব product দেখুন 👇\n${catalogPublicUrl}`)}`;

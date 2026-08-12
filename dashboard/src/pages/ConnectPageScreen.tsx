@@ -946,9 +946,9 @@ export function ConnectPageScreen({ dark, userId: _userId, onConnected, onLogout
                             <div style={{ fontSize: 11.5, color: muted, fontWeight: 600 }}>{copy('Callback URL', 'Callback URL')}</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <code style={{ flex: 1, background: dark ? 'rgba(0,0,0,0.2)' : '#fff', padding: '8px 12px', borderRadius: 8, fontSize: 12, color: text, wordBreak: 'break-all', fontFamily: 'monospace', border: `1px solid ${border}` }}>
-                                {connectResult.webhookUrl || 'https://chatcat.pro/webhook'}
+                                {connectResult.webhookUrl || 'https://flamboyai.com/webhook'}
                               </code>
-                              <button onClick={() => navigator.clipboard.writeText(connectResult.webhookUrl || 'https://chatcat.pro/webhook')}
+                              <button onClick={() => navigator.clipboard.writeText(connectResult.webhookUrl || 'https://flamboyai.com/webhook')}
                                 style={{ border: `1px solid rgba(99,102,241,0.4)`, borderRadius: 7, padding: '6px 12px', background: 'rgba(99,102,241,0.1)', color: '#6366f1', cursor: 'pointer', fontSize: 11, fontWeight: 700, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                                 {copy('Copy', 'Copy')}
                               </button>

@@ -1,20 +1,20 @@
 #!/bin/bash
 # ============================================================
-#  Chatcat Pro — Backend Deploy Script
+#  FlamboyAI — Backend Deploy Script
 #  Run on VPS after pulling latest code:
-#    cd /var/www/chatcatpro/backend
+#    cd /var/www/flamboyai/backend
 #    bash scripts/deploy.sh
 # ============================================================
 
 set -e  # Stop on first error
 
 echo "========================================"
-echo "  Chatcat Pro — Deploy $(date '+%Y-%m-%d %H:%M:%S')"
+echo "  FlamboyAI — Deploy $(date '+%Y-%m-%d %H:%M:%S')"
 echo "========================================"
 
 # 1. Stop PM2 process to free up memory
-echo "Stopping PM2 chatcatpro process to free up memory..."
-pm2 stop chatcatpro || true
+echo "Stopping PM2 flamboyai process to free up memory..."
+pm2 stop flamboyai || true
 
 # 2. Install ALL dependencies (including devDeps needed for build)
 echo "[1/6] Installing all dependencies..."
@@ -43,5 +43,5 @@ pm2 reload ecosystem.config.js --env production || pm2 start ecosystem.config.js
 
 echo ""
 echo "✅ Deploy complete!"
-echo "   Logs: pm2 logs chatcatpro"
+echo "   Logs: pm2 logs flamboyai"
 echo "   Status: pm2 status"

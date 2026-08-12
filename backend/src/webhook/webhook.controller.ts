@@ -57,6 +57,17 @@ export class WebhookController {
       return challenge;
     }
 
+    // Shared secret for the one-time app-level Meta Webhooks product
+    // handshake (the shared flamboyai app, not a per-client custom app).
+    // Works in production too, unlike DEFAULT_VERIFY_TOKEN above.
+    if (
+      process.env.PLATFORM_VERIFY_TOKEN &&
+      token === process.env.PLATFORM_VERIFY_TOKEN
+    ) {
+      this.logger.log(`[Webhook] Verified via PLATFORM_VERIFY_TOKEN`);
+      return challenge;
+    }
+
     this.logger.warn(`[Webhook] Verification failed — unknown token`);
     return 'Verification failed';
   }

@@ -37,7 +37,7 @@ export class UniversityCrawlerService {
 
       try {
         const res = await fetch(normalized, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
           signal: AbortSignal.timeout(10_000),
         });
         if (!res.ok) continue;
@@ -140,7 +140,7 @@ export class UniversityCrawlerService {
     // Also discover links from the homepage that match keywords
     try {
       const homeRes = await fetch(baseUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
         signal: AbortSignal.timeout(10_000),
       });
       if (homeRes.ok) {
@@ -179,7 +179,7 @@ export class UniversityCrawlerService {
       if (fetched >= 10) break;
       try {
         const res = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ChatcatBot/1.0)' },
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; FlamboyAIBot/1.0)' },
           signal: AbortSignal.timeout(10_000),
         });
         if (!res.ok) continue;

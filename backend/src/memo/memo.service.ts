@@ -62,7 +62,7 @@ export class MemoService {
 
     const slug = p.catalogSlug || String(pageId);
     const catalogBaseUrl =
-      process.env.CATALOG_BASE_URL || 'https://chatcat.pro';
+      process.env.CATALOG_BASE_URL || 'https://flamboyai.com';
     const catalogUrl = `${catalogBaseUrl}/catalog/${slug}`;
 
     return {

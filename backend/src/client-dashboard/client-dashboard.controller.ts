@@ -1205,6 +1205,11 @@ export class ClientDashboardController {
     return this.svc.getWallet(this.pid(r, p));
   }
 
+  @Get(':pageId/wallet/packages')
+  getCreditPackages() {
+    return this.svc.getCreditPackagesForPage();
+  }
+
   @Get(':pageId/wallet/transactions')
   getWalletTransactions(
     @Param('pageId') p: string,
@@ -1224,7 +1229,8 @@ export class ClientDashboardController {
     @Body() b: any,
   ) {
     return this.svc.submitRechargeRequest(this.pid(r, p), {
-      amountBdt: Number(b?.amountBdt),
+      packageId: b?.packageId !== undefined ? Number(b.packageId) : undefined,
+      amountBdt: b?.amountBdt !== undefined ? Number(b.amountBdt) : undefined,
       method: b?.method || 'bkash',
       transactionId: b?.transactionId || '',
       note: b?.note,

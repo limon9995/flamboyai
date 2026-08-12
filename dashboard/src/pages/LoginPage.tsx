@@ -111,9 +111,9 @@ export function LoginPage({ dark, setDark, onLogin, onSignup, onForgotPassword, 
 
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <img src="/logo.png" alt="Chatcat" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: '50%', margin: '0 auto 14px', display: 'block' }} />
+          <img src="/logo.png" alt="FlamboyAI" style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: '50%', margin: '0 auto 14px', display: 'block' }} />
           <div style={{ fontSize: 22, fontWeight: 800, color: text, letterSpacing: '-0.04em', lineHeight: 1 }}>
-            Chatcat
+            FlamboyAI
           </div>
           <div style={{ fontSize: 12.5, color: muted, marginTop: 5, fontWeight: 500 }}>
             {copy('কমার্স অটোমেশন ড্যাশবোর্ড', 'Commerce Automation Dashboard')}

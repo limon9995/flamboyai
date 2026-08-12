@@ -12,9 +12,9 @@ const LANDING_HTML = String.raw`<!DOCTYPE html>
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Chatcat — Facebook Commerce Automation</title>
+<title>FlamboyAI — Facebook Commerce Automation</title>
 <meta name="description" content="Facebook Messenger দিয়ে automatic order নিন, OCR দিয়ে product detect করুন, courier booking করুন — সব একজায়গায়।"/>
-<meta name="dashboard-url" content="https://app.chatcat.pro"/>
+<meta name="dashboard-url" content="https://app.flamboyai.com"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;0,9..40,900&family=Noto+Sans+Bengali:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
@@ -211,7 +211,7 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
 /* Messenger */
 .ms-hd{background:linear-gradient(135deg,#1877f2,#0d6fe8);padding:11px 13px;display:flex;align-items:center;gap:9px;flex-shrink:0}
 .ms-back-ic{color:rgba(255,255,255,.85);font-size:20px;font-weight:300;line-height:1}
-.ms-av{width:32px;height:32px;border-radius:9px;background:#fff url('https://app.chatcat.pro/logo.png') no-repeat;background-size:auto 88%;background-position:12% center;border:2px solid rgba(255,255,255,.22);flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3);overflow:hidden}
+.ms-av{width:32px;height:32px;border-radius:9px;background:#fff url('https://app.flamboyai.com/logo.png') no-repeat;background-size:auto 88%;background-position:12% center;border:2px solid rgba(255,255,255,.22);flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3);overflow:hidden}
 .ms-nm{font-size:13px;font-weight:700;color:#fff;line-height:1.2}.ms-ac{display:flex;align-items:center;gap:4px;font-size:10px;color:rgba(255,255,255,.7);margin-top:1px}
 .ms-gdot{width:6px;height:6px;border-radius:50%;background:#4ade80;box-shadow:0 0 6px #4ade80;animation:pulse 2s ease infinite;flex-shrink:0}
 .ms-chat-area{flex:1;overflow:hidden;padding:10px 9px;display:flex;flex-direction:column;gap:5px;background:#0c0c1a}
@@ -306,7 +306,7 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
 <nav>
   <div class="logo">
     <div class="logo-icon">C</div>
-    <span class="logo-text">Chatcat</span>
+    <span class="logo-text">FlamboyAI</span>
   </div>
   <div class="nav-links">
     <a href="#features" class="nav-link">Features</a>
@@ -345,7 +345,7 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
       ৭ দিন Free Trial শুরু করুন →
     </a>
     <a href="#pricing" class="btn-ghost">Pricing দেখুন ↓</a>
-    <a href="https://wa.me/8801720450797" target="_blank" rel="noopener" class="btn-ghost">💬 WhatsApp করুন</a>
+    <a href="https://wa.me/8801575897887" target="_blank" rel="noopener" class="btn-ghost">💬 WhatsApp করুন</a>
   </div>
   <p style="margin-top:14px;font-size:12.5px;color:rgba(148,163,184,0.6);animation:fadeUp .6s .45s ease both">
     🎁 ৭ দিন বিনামূল্যে ব্যবহার করুন — কোনো Credit Card লাগবে না
@@ -375,7 +375,7 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
         <div class="dot" style="background:#ff5f57"></div>
         <div class="dot" style="background:#febc2e"></div>
         <div class="dot" style="background:#28c840"></div>
-        <div style="flex:1;text-align:center;font-size:12px;opacity:.28;font-weight:500">Chatcat Dashboard</div>
+        <div style="flex:1;text-align:center;font-size:12px;opacity:.28;font-weight:500">FlamboyAI Dashboard</div>
         <div style="font-size:11px;opacity:.25">v17.1</div>
       </div>
       <div class="mockup-content">
@@ -568,7 +568,7 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
   <div class="demo-inner">
     <span class="section-label fade-up">Live Demo</span>
     <h2 class="demo-title fade-up">Bot-এর সাথে কথা বলুন</h2>
-    <p class="demo-sub fade-up">দেখুন Chatcat bot কিভাবে কাজ করে। নিচের <span style="color:#6366f1;font-weight:700">chat bubble</span>-এ click করে সরাসরি AI-এর সাথে কথা বলুন।</p>
+    <p class="demo-sub fade-up">দেখুন FlamboyAI bot কিভাবে কাজ করে। নিচের <span style="color:#6366f1;font-weight:700">chat bubble</span>-এ click করে সরাসরি AI-এর সাথে কথা বলুন।</p>
 
     <div class="scene-root" id="sceneRoot">
       <!-- BG orbs -->
@@ -588,7 +588,7 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
               <div class="ms-back-ic">‹</div>
               <div class="ms-av"></div>
               <div style="flex:1">
-                <div class="ms-nm">Chatcat Bot</div>
+                <div class="ms-nm">FlamboyAI Bot</div>
                 <div class="ms-ac"><span class="ms-gdot"></span> Active now</div>
               </div>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
@@ -936,10 +936,10 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
         <div style="font-size:13px;color:var(--muted);line-height:1.6">৳৬৯৯ monthly fee + wallet recharge — bKash/Nagad-এ payment। ২৪ঘণ্টার মধ্যে activate।</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;flex-shrink:0">
-        <a href="https://wa.me/8801720450797" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:7px;padding:11px 22px;background:var(--accent);color:#fff;border-radius:10px;font-weight:700;font-size:13.5px;text-decoration:none;white-space:nowrap;box-shadow:0 2px 12px rgba(91,76,245,.35);transition:all .15s">
+        <a href="https://wa.me/8801575897887" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:7px;padding:11px 22px;background:var(--accent);color:#fff;border-radius:10px;font-weight:700;font-size:13.5px;text-decoration:none;white-space:nowrap;box-shadow:0 2px 12px rgba(91,76,245,.35);transition:all .15s">
           💚 WhatsApp করুন ✦
         </a>
-        <a href="https://m.me/Chatcatpro" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:7px;padding:11px 22px;background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--border2);border-radius:10px;font-weight:700;font-size:13.5px;text-decoration:none;white-space:nowrap;transition:all .15s">
+        <a href="https://m.me/flamboyai" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:7px;padding:11px 22px;background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--border2);border-radius:10px;font-weight:700;font-size:13.5px;text-decoration:none;white-space:nowrap;transition:all .15s">
           💬 Messenger
         </a>
       </div>
@@ -956,11 +956,11 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
       🎁 Free Trial শুরু করুন
     </a>
-    <a href="https://wa.me/8801720450797" target="_blank" rel="noopener" class="btn-ghost">💬 WhatsApp এ জিজ্ঞেস করুন</a>
+    <a href="https://wa.me/8801575897887" target="_blank" rel="noopener" class="btn-ghost">💬 WhatsApp এ জিজ্ঞেস করুন</a>
     <a id="cta-login" href="#" class="btn-ghost">Login করুন</a>
   </div>
   <p style="margin-top:12px;font-size:13px;opacity:.55;position:relative">৭ দিন free • Card লাগবে না • যেকোনো সময় বাতিল</p>
-  <p style="margin-top:8px;font-size:13.5px;opacity:.6;position:relative">যোগাযোগ: <a href="mailto:info@chatcat.pro" style="color:#a5b4fc;text-decoration:none;font-weight:600">info@chatcat.pro</a></p>
+  <p style="margin-top:8px;font-size:13.5px;opacity:.6;position:relative">যোগাযোগ: <a href="mailto:info@flamboyai.com" style="color:#a5b4fc;text-decoration:none;font-weight:600">info@flamboyai.com</a></p>
 </div>
 
 <!-- ══ Footer ══ -->
@@ -968,15 +968,15 @@ footer{border-top:1px solid var(--border);padding:44px 5%;display:flex;justify-c
   <div>
     <div class="footer-logo">
       <div class="logo-icon" style="width:26px;height:26px;font-size:12px;border-radius:7px">C</div>
-      <span style="font-size:14px;font-weight:800;letter-spacing:-0.03em">Chatcat</span>
+      <span style="font-size:14px;font-weight:800;letter-spacing:-0.03em">FlamboyAI</span>
     </div>
-    <div class="footer-copy">© 2025 Chatcat. All rights reserved.</div>
+    <div class="footer-copy">© 2025 FlamboyAI. All rights reserved.</div>
   </div>
   <div class="footer-links">
     <a href="#features" class="footer-link">Features</a>
     <a href="#how-it-works" class="footer-link">How it works</a>
     <a href="#pricing" class="footer-link">Pricing</a>
-    <a href="mailto:info@chatcat.pro" class="footer-link">Contact</a>
+    <a href="mailto:info@flamboyai.com" class="footer-link">Contact</a>
   </div>
 </footer>
 
@@ -1134,9 +1134,9 @@ document.querySelectorAll('.btn-primary,.nav-cta').forEach(function(btn) {
   if (!chat) return;
 
   var msgs = [
-    {r:'b', t:'হ্যালো! 👋 আমি Chatcat AI bot। কিভাবে সাহায্য করতে পারি?'},
+    {r:'b', t:'হ্যালো! 👋 আমি FlamboyAI AI bot। কিভাবে সাহায্য করতে পারি?'},
     {r:'u', t:'আপনার service কী?'},
-    {r:'b', t:'Chatcat হলো Facebook Messenger automation। auto-reply, order management, courier booking সব automatically! 🚀'},
+    {r:'b', t:'FlamboyAI হলো Facebook Messenger automation। auto-reply, order management, courier booking সব automatically! 🚀'},
     {r:'u', t:'দাম কত?'},
     {r:'b', t:'মাত্র ৳৬৯৯/মাস। AI reply, order tracking, accounting — সব included! 💰'},
     {r:'u', t:'Trial আছে?'},
@@ -1322,7 +1322,7 @@ document.querySelectorAll('.btn-primary,.nav-cta').forEach(function(btn) {
 })();
 </script>
 
-<!-- ── Chatcat Live Chat Widget ── -->
+<!-- ── FlamboyAI Live Chat Widget ── -->
 <style>
   #cc-bubble {
     position: fixed; bottom: 28px; right: 28px; z-index: 9999;
@@ -1360,7 +1360,7 @@ document.querySelectorAll('.btn-primary,.nav-cta').forEach(function(btn) {
   }
   #cc-avatar {
     width: 42px; height: 42px; border-radius: 11px;
-    background: #fff url('https://app.chatcat.pro/logo.png') no-repeat;
+    background: #fff url('https://app.flamboyai.com/logo.png') no-repeat;
     background-size: auto 88%;
     background-position: 12% center;
     flex-shrink: 0;
@@ -1401,22 +1401,22 @@ document.querySelectorAll('.btn-primary,.nav-cta').forEach(function(btn) {
   @media (max-width: 400px) { #cc-bubble { bottom: 80px; right: 14px; } #cc-panel { width: calc(100vw - 28px); right: 14px; bottom: 148px; } }
 </style>
 
-<button id="cc-bubble" aria-label="Chat with us" title="Chat with Chatcat">
+<button id="cc-bubble" aria-label="Chat with us" title="Chat with FlamboyAI">
   <svg viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
 </button>
 
-<div id="cc-panel" role="dialog" aria-label="Chatcat support chat">
+<div id="cc-panel" role="dialog" aria-label="FlamboyAI support chat">
   <div id="cc-header">
     <div id="cc-avatar"></div>
     <div id="cc-header-info">
-      <div id="cc-header-name">Chatcat Bot</div>
+      <div id="cc-header-name">FlamboyAI Bot</div>
       <div id="cc-header-status">Active now</div>
     </div>
     <button id="cc-close" aria-label="Close chat">✕</button>
   </div>
   <div id="cc-messages">
     <div class="cc-msg bot">
-      <div class="cc-bubble-text">হ্যালো! 👋 আমি Chatcat-এর AI assistant। Chatcat সম্পর্কে যেকোনো প্রশ্ন করুন — features, pricing, কিভাবে শুরু করবেন সব বলব।</div>
+      <div class="cc-bubble-text">হ্যালো! 👋 আমি FlamboyAI-এর AI assistant। FlamboyAI সম্পর্কে যেকোনো প্রশ্ন করুন — features, pricing, কিভাবে শুরু করবেন সব বলব।</div>
     </div>
     <div id="cc-typing" class="cc-msg bot">
       <div class="cc-bubble-text"><div class="cc-dots"><span></span><span></span><span></span></div></div>
@@ -1453,7 +1453,7 @@ document.querySelectorAll('.btn-primary,.nav-cta').forEach(function(btn) {
     input.value='';input.style.height='auto';
     appendMsg('user',msg);history.push({role:'user',content:msg});
     setDisabled(true);setTyping(true);
-    fetch('https://api.chatcat.pro/chat',{
+    fetch('https://api.flamboyai.com/chat',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({message:msg,history:history.slice(-8)})
     }).then(function(r){return r.json();}).then(function(data){
@@ -1498,13 +1498,13 @@ export function LandingPage(_props: Props) {
           }}
         >
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.04em' }}>Chatcat</div>
+            <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.04em' }}>FlamboyAI</div>
             <div style={{ marginTop: 10, fontSize: 13, opacity: 0.6 }}>লোড হচ্ছে...</div>
           </div>
         </div>
       )}
       <iframe
-        title="Chatcat Landing"
+        title="FlamboyAI Landing"
         srcDoc={LANDING_HTML}
         onLoad={() => setLoaded(true)}
         style={{
