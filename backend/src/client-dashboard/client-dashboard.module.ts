@@ -20,6 +20,7 @@ import { SpamCheckerModule } from '../spam-checker/spam-checker.module';
 import { AdminModule } from '../admin/admin.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { InboxModule } from '../inbox/inbox.module';
 import { ClientDashboardService } from './client-dashboard.service';
 import { ClientDashboardController } from './client-dashboard.controller';
 
@@ -46,6 +47,7 @@ import { ClientDashboardController } from './client-dashboard.controller';
     AdminModule,
     TelegramModule,
     PricingModule,
+    InboxModule,
   ],
   providers: [ClientDashboardService],
   controllers: [ClientDashboardController],

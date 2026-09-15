@@ -16,6 +16,7 @@ import { PaymentVerifyModule } from '../payment-verify/payment-verify.module';
 import { SmsGatewayModule } from '../sms-gateway/sms-gateway.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { InboxModule } from '../inbox/inbox.module';
 import { IgMessengerModule } from './ig-messenger.module';
 import { IgWebhookController } from './ig-webhook.controller';
 import { IgWebhookService } from './ig-webhook.service';
@@ -42,6 +43,7 @@ import { DraftOrderHandler } from '../webhook/handlers/draft-order.handler';
     OrdersModule,
     IgMessengerModule,
     PricingModule,
+    InboxModule,
   ],
   controllers: [IgWebhookController],
   providers: [

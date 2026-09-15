@@ -30,10 +30,12 @@ import { OcrQueueModule } from '../ocr-queue/ocr-queue.module';
 import { VisionAnalysisModule } from '../vision-analysis/vision-analysis.module';
 import { ProductMatchModule } from '../product-match/product-match.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { InboxModule } from '../inbox/inbox.module';
 
 @Module({
   imports: [
     PrismaModule,
+    InboxModule,
     CommonModule,
     BotModule,
     BotKnowledgeModule,

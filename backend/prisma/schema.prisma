@@ -140,15 +140,15 @@ model Page {
   isTestPage                Boolean @default(false)
   automationOn              Boolean @default(false)
   automationAllowed         Boolean @default(true)
-  ocrOn                     Boolean @default(false)
+  ocrOn                     Boolean @default(true)
   ocrAllowed                Boolean @default(true)
   infoModeOn                Boolean @default(true)
   infoModeAllowed           Boolean @default(true)
   orderModeOn               Boolean @default(true)
   orderModeAllowed          Boolean @default(true)
-  printModeOn               Boolean @default(false)
+  printModeOn               Boolean @default(true)
   printModeAllowed          Boolean @default(true)
-  memoSaveModeOn            Boolean @default(false)
+  memoSaveModeOn            Boolean @default(true)
   memoSaveModeAllowed       Boolean @default(true)
   memoTemplateModeOn        Boolean @default(false)
   memoTemplateModeAllowed   Boolean @default(true)
@@ -322,6 +322,36 @@ model Page {
   // over the agentType-level persona when set; falls back to it when empty.
   customPersonaPrompt String?
 
+  // Client-authored custom business rules (e.g. "always ask size before
+  // confirming", "never offer discounts") — injected into the AI prompt as a
+  // clearly-labeled supplementary section positioned just before the fixed
+  // task-rules/JSON-action-schema block. Cannot override that schema; see
+  // smart-bot.service.ts buildSystemPrompt() framing text.
+  behaviorInstructions String @default("")
+
+  // 'guided' (default) = today's behavior, byte-identical. 'custom' = the
+  // client's own customSystemPrompt (if non-empty) fully replaces the
+  // hardcoded phrasing blocks in smart-bot.service.ts buildSystemPrompt();
+  // live product catalog + conversation-state facts are still injected
+  // automatically underneath it. See buildSystemPrompt()'s useCustomPrompt
+  // branch.
+  promptMode String @default("guided") // 'guided' | 'custom'
+  // Client's free-form system prompt (role, tone, product info, discount
+  // rules, delivery/order/escalation flow — all in the client's own words).
+  // Capped at 8000 chars server-side in client-dashboard.service.ts.
+  customSystemPrompt String?
+
+  // Agent handoff: pause the bot for a conversation when a human agent takes
+  // over. autoPauseOnHumanTakeover=true pauses on ANY page-sent message
+  // (echo); stopAiCommand/startAiCommand let an agent pause/resume with one
+  // exact text/emoji regardless of that toggle. autoPauseTimeoutMinutes is
+  // how long a pause lasts before the bot auto-resumes on its own (0 = never
+  // auto-resume) — see ConversationContextService.isAgentHandling().
+  autoPauseOnHumanTakeover Boolean @default(false)
+  autoPauseTimeoutMinutes  Int     @default(120)
+  stopAiCommand            String?
+  startAiCommand           String?
+
   // -- BUSINESS KNOWLEDGE --
   knowledgeText String @default("") // Client FAQ, policies, product info — fed to AI system prompt
 
@@ -370,6 +400,9 @@ model Page {
   followUps        FollowUp[]
   broadcasts       Broadcast[]
   courierShipments CourierShipment[]
+
+  // Inbox
+  messages Message[]
 
   // V27: Product reviews
   reviews Review[]
@@ -740,6 +773,31 @@ model ConversationSession {
 
   @@unique([pageIdRef, customerPsid])
   @@index([pageIdRef])
+}
+
+// ── INBOX: unified message log across all platforms ────────────────────────
+model Message {
+  id           Int    @id @default(autoincrement())
+  pageId       Int
+  page         Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  customerPsid String
+
+  // FACEBOOK | INSTAGRAM | WHATSAPP | TELEGRAM
+  platform String
+  // IN = from customer, OUT = sent by bot/agent
+  direction String
+  // text | image | audio | template | other
+  type    String  @default("text")
+  content String?
+
+  // Provider's own message id, used to de-dupe re-delivered webhooks
+  externalId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([pageId, customerPsid, createdAt])
+  @@index([pageId, platform])
+  @@index([externalId])
 }
 
 model CallAttempt {

@@ -19,6 +19,7 @@ const BotKnowledgePage= safeLazy(() => import('./BotKnowledgePage').then(m => ({
 const PrintPage       = safeLazy(() => import('./PrintPage').then(m => ({ default: m.PrintPage })));
 const MemoTemplatePage= safeLazy(() => import('./MemoTemplatePage').then(m => ({ default: m.MemoTemplatePage })));
 const CrmPage         = safeLazy(() => import('./CrmPage').then(m => ({ default: m.CrmPage })));
+const InboxPage       = safeLazy(() => import('./InboxPage').then(m => ({ default: m.InboxPage })));
 const CourierPage     = safeLazy(() => import('./CourierPage').then(m => ({ default: m.CourierPage })));
 const BroadcastPage   = safeLazy(() => import('./BroadcastPage').then(m => ({ default: m.BroadcastPage })));
 const FollowUpPage    = safeLazy(() => import('./FollowUpPage').then(m => ({ default: m.FollowUpPage })));
@@ -63,7 +64,7 @@ function ConnectFbPageRedirect({ onManagePages, muted }: { onManagePages?: () =>
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NavKey = 'OVERVIEW' | 'AGENT_TASKS' | 'ORDERS' | 'PRODUCTS' | 'ACCOUNTING' |
-  'BOT_KNOWLEDGE' | 'PRINT' | 'MEMO_TEMPLATE' | 'CRM' | 'COURIER' |
+  'BOT_KNOWLEDGE' | 'PRINT' | 'MEMO_TEMPLATE' | 'CRM' | 'INBOX' | 'COURIER' |
   'BROADCAST' | 'FOLLOWUP' | 'CATALOG' | 'RESTAURANT' | 'FRAUD_CHECKER' | 'AUTO_POST' | 'UNIVERSITY' |
   'WALLET' | 'CONNECT_FB_PAGE' |
   'SETTINGS_BUSINESS' | 'SETTINGS_DELIVERY' | 'SETTINGS_BOT' |
@@ -93,6 +94,7 @@ const NAV: NavItem[] = [
   { key: 'ACCOUNTING',         bn: 'হিসাব',               en: 'Accounting',          icon: '💼', group: 'store' },
   // ── Bot & Customers ──────────────────────────────────────────────────
   { key: 'BOT_KNOWLEDGE',      bn: 'বট নলেজ',            en: 'Bot Knowledge',       icon: '🧠', group: 'bot' },
+  { key: 'INBOX',              bn: 'ইনবক্স',              en: 'Inbox',               icon: '💬', group: 'bot' },
   { key: 'CRM',                bn: 'কাস্টমার',            en: 'Customers',           icon: '👥', group: 'bot' },
   { key: 'BROADCAST',          bn: 'ব্রডকাস্ট',           en: 'Broadcast',           icon: '📣', group: 'bot' },
   { key: 'AUTO_POST',          bn: 'অটো পোস্ট',           en: 'Auto Post',           icon: '📲', group: 'bot' },
@@ -558,6 +560,13 @@ export function DashboardLayout({
         <PageErrorBoundary name="CrmPage">
           <Suspense fallback={pageFallback}>
             <CrmPage th={th} pageId={pageId} onToast={showToast} />
+          </Suspense>
+        </PageErrorBoundary>
+      );
+      case 'INBOX':       return (
+        <PageErrorBoundary name="InboxPage">
+          <Suspense fallback={pageFallback}>
+            <InboxPage th={th} pageId={pageId} onToast={showToast} />
           </Suspense>
         </PageErrorBoundary>
       );

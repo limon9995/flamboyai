@@ -16,6 +16,7 @@ import { VisionAnalysisService } from '../vision-analysis/vision-analysis.servic
 import { ProductMatchService } from '../product-match/product-match.service';
 import { WhisperService } from '../whisper/whisper.service';
 import { extractTransactionId } from '../common/payment-ocr.util';
+import { MessageLogService } from '../inbox/inbox.module';
 
 @Injectable()
 export class WaWebhookService {
@@ -25,6 +26,7 @@ export class WaWebhookService {
     private readonly prisma: PrismaService,
     private readonly encryption: EncryptionService,
     private readonly waMessenger: WaMessengerService,
+    private readonly messageLog: MessageLogService,
     private readonly botKnowledge: BotKnowledgeService,
     private readonly botIntent: BotIntentService,
     private readonly ctx: ConversationContextService,
@@ -131,6 +133,27 @@ export class WaWebhookService {
     const rawToken = this.encryption.decrypt(page.waToken as string);
     const phoneNumberId = page.waPhoneNumberId as string;
 
+    // Log every inbound message for the dashboard Inbox, regardless of bot/agent state below.
+    if (msg?.type) {
+      const inboundText =
+        msg.type === 'text'
+          ? (msg.text?.body || '').trim()
+          : `[${msg.type}]`;
+      if (inboundText) {
+        this.messageLog
+          .logByPageId({
+            pageId,
+            customerPsid: waId,
+            platform: 'WHATSAPP',
+            direction: 'IN',
+            type: msg.type,
+            content: inboundText,
+            externalId: msg.id ?? null,
+          })
+          .catch(() => {});
+      }
+    }
+
     const safeSend = async (text: string) => {
       if (!text) return;
       try {
@@ -222,8 +245,20 @@ export class WaWebhookService {
       if (aiAllowed && this.smartBot.isAvailable()) {
         const result = await this.smartBot.handle(page, waId, text, draft, this.draftHandler);
         if (result !== false) {
-          if (typeof result === 'object' && result.showCatalog) {
+          if (typeof result === 'object' && (result as any).showCatalog) {
             await this.sendCatalogList(page, waId, phoneNumberId, rawToken, result.reply);
+          } else if (typeof result === 'object' && (result as any).showProductImage) {
+            // Custom Prompt mode: one specific product's image. imageUrl came
+            // from our own DB lookup (product code → Product.imageUrl) in
+            // smart-bot.service.ts, never from the model directly.
+            await safeSend(result.reply);
+            const rawUrl = (result as any).imageUrl as string | null;
+            const fullUrl = rawUrl
+              ? rawUrl.startsWith('http://') || rawUrl.startsWith('https://')
+                ? rawUrl
+                : `${(process.env.API_BASE_URL || 'https://api.flamboyai.com').replace(/\/$/, '')}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`
+              : null;
+            if (fullUrl) await this.waMessenger.sendImage(phoneNumberId, rawToken, waId, fullUrl);
           } else {
             const replyText = typeof result === 'string' ? result : result.reply;
             await safeSend(replyText);

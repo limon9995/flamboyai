@@ -7,6 +7,7 @@ import { BotIntentService } from '../bot/bot-intent.service';
 import { ConversationContextService } from '../conversation-context/conversation-context.service';
 import { DraftOrderHandler } from '../webhook/handlers/draft-order.handler';
 import { CrmService } from '../crm/crm.service';
+import { MessageLogService } from '../inbox/inbox.module';
 import {
   formatSlabsBn,
   isRestaurantReady,
@@ -26,6 +27,7 @@ export class IgWebhookService {
     private readonly ctx: ConversationContextService,
     private readonly draftHandler: DraftOrderHandler,
     private readonly crm: CrmService,
+    private readonly messageLog: MessageLogService,
   ) {}
 
   // ── Entry point ─────────────────────────────────────────────────────────────
@@ -98,10 +100,31 @@ export class IgWebhookService {
     const pageId = page.id as number;
     const rawToken = this.encryption.decrypt(page.igToken as string);
 
+    // Log every inbound DM for the dashboard Inbox, regardless of bot/agent state below.
+    const inboundMsg = event.message;
+    if (inboundMsg) {
+      const inboundText =
+        (inboundMsg.text || '').trim() ||
+        (inboundMsg.attachments?.[0]?.type ? `[${inboundMsg.attachments[0].type}]` : '');
+      if (inboundText) {
+        this.messageLog
+          .logByPageId({
+            pageId,
+            customerPsid: senderId,
+            platform: 'INSTAGRAM',
+            direction: 'IN',
+            type: inboundMsg.attachments?.length ? inboundMsg.attachments[0].type : 'text',
+            content: inboundText,
+            externalId: inboundMsg.mid ?? null,
+          })
+          .catch(() => {});
+      }
+    }
+
     const safeSend = async (text: string) => {
       if (!text) return;
       try {
-        await this.igMessenger.sendText(rawToken, senderId, text);
+        await this.igMessenger.sendText(rawToken, senderId, text, pageId);
       } catch (err) {
         this.logger.error(`[IG] safeSend senderId=${senderId}: ${err}`);
       }
@@ -295,7 +318,7 @@ export class IgWebhookService {
     const safeSendDm = async (msg: string) => {
       if (!msg) return;
       try {
-        await this.igMessenger.sendText(rawToken, commenterId, msg);
+        await this.igMessenger.sendText(rawToken, commenterId, msg, pageId);
       } catch (err) {
         this.logger.debug(`[IG] DM to commenter failed (may not have messaged first) commenterId=${commenterId}: ${err}`);
       }

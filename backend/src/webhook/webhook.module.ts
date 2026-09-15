@@ -26,6 +26,7 @@ import { CourierModule } from '../courier/courier.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { InboxModule } from '../inbox/inbox.module';
 import { WebhookController } from './webhook.controller';
 import { WebhookService } from './webhook.service';
 import { SmartBotService } from '../bot/smart-bot.service';
@@ -62,6 +63,7 @@ import { NegotiationHandler } from './handlers/negotiation.handler';
     TelegramModule,
     OrdersModule,
     PricingModule,
+    InboxModule,
   ],
   controllers: [WebhookController],
   providers: [

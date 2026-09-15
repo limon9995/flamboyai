@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { MessageLogService } from '../inbox/inbox.module';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = [1000, 2000, 4000];
@@ -16,7 +17,7 @@ export class WaMessengerService {
   private readonly logger = new Logger(WaMessengerService.name);
   private readonly storageRoot = path.join(process.cwd(), 'storage', 'wa-media');
 
-  constructor() {
+  constructor(private readonly messageLog: MessageLogService) {
     fs.mkdirSync(this.storageRoot, { recursive: true });
   }
 
@@ -285,6 +286,7 @@ export class WaMessengerService {
 
         if (res.ok) {
           this.logger.debug(`[WaMessenger] Sent to=${to} len=${text.length}`);
+          this.messageLog.logByWaPhoneNumberId(phoneNumberId, to, 'OUT', text).catch(() => {});
           return;
         }
 

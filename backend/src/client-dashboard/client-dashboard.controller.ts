@@ -28,6 +28,7 @@ import { FollowUpService } from '../followup/followup.service';
 import { BroadcastService } from '../broadcast/broadcast.service';
 import { SpamCheckerService } from '../spam-checker/spam-checker.service';
 import { GlobalSettingsService } from '../common/global-settings.service';
+import { InboxService } from '../inbox/inbox.module';
 import { SkipThrottle } from '@nestjs/throttler';
 
 @SkipThrottle({ global: true, auth: true, chat: true })
@@ -47,6 +48,7 @@ export class ClientDashboardController {
     private readonly broadcast: BroadcastService,
     private readonly spamChecker: SpamCheckerService,
     private readonly globalSettings: GlobalSettingsService,
+    private readonly inbox: InboxService,
   ) {}
 
   private pid(req: any, pageId: string): number {
@@ -962,6 +964,27 @@ export class ClientDashboardController {
   }
 
   // ── V9: CRM ───────────────────────────────────────────────────────────────
+  // ── Inbox ────────────────────────────────────────────────────────────────
+  @Get(':pageId/inbox/conversations') inboxConversations(
+    @Param('pageId') p: string,
+    @Query() q: any,
+    @Req() r: any,
+  ) {
+    return this.inbox.listConversations(this.pid(r, p), {
+      platform: q.platform,
+      search: q.search,
+    });
+  }
+  @Get(':pageId/inbox/messages') inboxMessages(
+    @Param('pageId') p: string,
+    @Query() q: any,
+    @Req() r: any,
+  ) {
+    return this.inbox.listMessages(this.pid(r, p), q.platform, q.psid, {
+      limit: q.limit ? Number(q.limit) : undefined,
+    });
+  }
+
   @Get(':pageId/crm/customers') crmList(
     @Param('pageId') p: string,
     @Query() q: any,

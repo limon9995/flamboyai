@@ -53,6 +53,7 @@ import {
   CUSTOM_CARD_BTN_PREFIX,
   parseCardButtons,
 } from '../common/product-card-buttons';
+import { MessageLogService } from '../inbox/inbox.module';
 
 function getFullImageUrl(url?: string | null): string | undefined {
   if (!url) return undefined;
@@ -118,6 +119,7 @@ export class WebhookService implements OnModuleDestroy {
     private readonly universityBot: UniversityBotService,
     private readonly telegram: TelegramNotificationService,
     private readonly courier: CourierService,
+    private readonly messageLog: MessageLogService,
   ) {}
 
   onModuleDestroy() {
@@ -199,11 +201,33 @@ export class WebhookService implements OnModuleDestroy {
       }
 
       for (const event of entry.messaging ?? []) {
-        // Echo: message sent BY the page itself (agent manual reply)
+        // Echo: message sent BY the page itself. Echoes include the sending
+        // app's id — our own bot's replies (sent via this same app's Send
+        // API) carry FB_APP_ID and must be ignored here, otherwise the bot
+        // would treat its own replies as a human agent taking over. Only an
+        // echo from a DIFFERENT app id (Meta Business Suite inbox, or
+        // another integration) is a genuine manual agent reply.
         if (event.message?.is_echo) {
+          const isOwnBotMessage =
+            String(event.message?.app_id ?? '') === String(process.env.FB_APP_ID ?? '');
           const customerPsid: string = event?.recipient?.id;
-          if (customerPsid) {
-            this.handleAgentEcho(resolvedPage, customerPsid).catch(() => {});
+          const echoText: string = String(event.message?.text ?? '');
+          if (customerPsid && !isOwnBotMessage) {
+            this.handleAgentEcho(resolvedPage, customerPsid, echoText).catch(
+              () => {},
+            );
+            if (echoText) {
+              this.messageLog
+                .logByPageId({
+                  pageId: resolvedPage.id,
+                  customerPsid,
+                  platform: 'FACEBOOK',
+                  direction: 'OUT',
+                  type: 'text',
+                  content: echoText,
+                })
+                .catch(() => {});
+            }
           }
           continue;
         }
@@ -303,6 +327,30 @@ export class WebhookService implements OnModuleDestroy {
             for (const [k, t] of this.recentMessageIds) {
               if (t < cutoff) this.recentMessageIds.delete(k);
             }
+          }
+        }
+
+        // Log every inbound message for the dashboard Inbox, regardless of bot state.
+        {
+          const inboundText =
+            (event.message.text || '').trim() ||
+            (event.message.attachments?.[0]?.type
+              ? `[${event.message.attachments[0].type}]`
+              : '');
+          if (inboundText) {
+            this.messageLog
+              .logByPageId({
+                pageId: resolvedPage.id,
+                customerPsid: psid,
+                platform: 'FACEBOOK',
+                direction: 'IN',
+                type: event.message.attachments?.length
+                  ? event.message.attachments[0].type
+                  : 'text',
+                content: inboundText,
+                externalId: mid ?? null,
+              })
+              .catch(() => {});
           }
         }
 
@@ -774,7 +822,11 @@ export class WebhookService implements OnModuleDestroy {
     }
 
     // Agent handling mode — bot stays silent until agent resumes bot from dashboard
-    const agentHandling = await this.ctx.isAgentHandling(pageId, psid);
+    const agentHandling = await this.ctx.isAgentHandling(
+      pageId,
+      psid,
+      page.autoPauseTimeoutMinutes ?? 120,
+    );
     if (agentHandling) {
       this.logger.log(
         `[Webhook] Bot muted (agent mode) — ignoring message. psid=${psid} page=${page.pageId}`,
@@ -1201,11 +1253,21 @@ export class WebhookService implements OnModuleDestroy {
           this.draftHandler,
         );
         if (result !== false) {
-          if (typeof result === 'object' && result.showCatalog) {
+          if (typeof result === 'object' && (result as any).showCatalog) {
             // AI chose to show the catalog (replaces the CATALOG_REQUEST keyword).
             // Send just the product cards — they carry their own text, so we skip
             // the AI lead-in to avoid a redundant second catalog message.
             await this.sendCatalogFallback(token, psid, page);
+          } else if (typeof result === 'object' && (result as any).showProductImage) {
+            // Custom Prompt mode: AI asked for one specific product's image
+            // (SHOW_PRODUCT_IMAGE) — send the reply text, then the image as
+            // its own message. imageUrl came from our own DB lookup in
+            // smart-bot.service.ts (product code → Product.imageUrl), never
+            // from the model directly, so there's nothing to sanitize here.
+            const replyText = result.reply;
+            await this.sendReplyInChunks(token, psid, replyText);
+            const fullUrl = getFullImageUrl((result as any).imageUrl);
+            if (fullUrl) await this.messenger.sendImage(token, psid, fullUrl);
           } else {
             const replyText =
               typeof result === 'string' ? result : result.reply;
@@ -3947,19 +4009,48 @@ export class WebhookService implements OnModuleDestroy {
   }
 
   /**
-   * Called when Facebook sends an echo (page sent a message to a customer).
-   * If that customer has an agent_required order, auto-mute the bot.
+   * Called when Facebook sends an echo from a genuine human agent reply
+   * (our own bot's echoes are filtered out before this is called — see the
+   * is_echo branch above). Three independent ways to pause/resume, checked
+   * in this order:
+   *   1. text === startAiCommand  → resume immediately (checked first so a
+   *      distinct start command always wins even if it were also configured
+   *      as the stop command by mistake)
+   *   2. text === stopAiCommand   → pause, regardless of the toggle below
+   *   3. autoPauseOnHumanTakeover → pause on ANY agent-sent message
+   * A pause auto-expires per Page.autoPauseTimeoutMinutes — see
+   * ConversationContextService.isAgentHandling().
    */
   private async handleAgentEcho(
     page: any,
     customerPsid: string,
+    text: string,
   ): Promise<void> {
     const pageId = page.id as number;
-    // Agent manually replied → mute the bot for this customer until dashboard resume
-    await this.ctx.setAgentHandling(pageId, customerPsid, true);
-    this.logger.log(
-      `[AgentEcho] Agent replied — bot muted for psid=${customerPsid} page=${page.pageId}`,
-    );
+    const trimmed = text.trim();
+    const startCmd = String(page.startAiCommand ?? '').trim();
+    const stopCmd = String(page.stopAiCommand ?? '').trim();
+
+    if (startCmd && trimmed === startCmd) {
+      await this.ctx.setAgentHandling(pageId, customerPsid, false);
+      this.logger.log(
+        `[AgentEcho] Start command matched — bot resumed for psid=${customerPsid} page=${page.pageId}`,
+      );
+      return;
+    }
+    if (stopCmd && trimmed === stopCmd) {
+      await this.ctx.setAgentHandling(pageId, customerPsid, true);
+      this.logger.log(
+        `[AgentEcho] Stop command matched — bot muted for psid=${customerPsid} page=${page.pageId}`,
+      );
+      return;
+    }
+    if (page.autoPauseOnHumanTakeover) {
+      await this.ctx.setAgentHandling(pageId, customerPsid, true);
+      this.logger.log(
+        `[AgentEcho] Agent replied — bot muted for psid=${customerPsid} page=${page.pageId}`,
+      );
+    }
   }
 
   /**

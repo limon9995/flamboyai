@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { MessageLogService } from '../inbox/inbox.module';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = [1000, 2000, 4000];
@@ -7,8 +8,15 @@ const RETRY_DELAY_MS = [1000, 2000, 4000];
 export class IgMessengerService {
   private readonly logger = new Logger(IgMessengerService.name);
 
-  /** Send a DM reply via Instagram Messenger API */
-  async sendText(rawToken: string, recipientId: string, text: string): Promise<void> {
+  constructor(private readonly messageLog: MessageLogService) {}
+
+  /** Send a DM reply via Instagram Messenger API. `pageId` (dashboard page id, if known) enables Inbox logging. */
+  async sendText(
+    rawToken: string,
+    recipientId: string,
+    text: string,
+    pageId?: number,
+  ): Promise<void> {
     if (!rawToken || !recipientId || !text) {
       this.logger.warn(`[IgMessenger] sendText missing params recipientId=${recipientId}`);
       return;
@@ -21,7 +29,12 @@ export class IgMessengerService {
       messaging_type: 'RESPONSE',
     });
 
-    await this.postWithRetry(url, rawToken, body, `DM recipientId=${recipientId}`);
+    const ok = await this.postWithRetry(url, rawToken, body, `DM recipientId=${recipientId}`);
+    if (ok && pageId) {
+      this.messageLog
+        .logByPageId({ pageId, customerPsid: recipientId, platform: 'INSTAGRAM', direction: 'OUT', content: text })
+        .catch(() => {});
+    }
   }
 
   /** Reply to an Instagram post comment */
@@ -37,7 +50,7 @@ export class IgMessengerService {
     await this.postWithRetry(url, rawToken, body, `comment reply commentId=${commentId}`);
   }
 
-  private async postWithRetry(url: string, rawToken: string, body: string, label: string): Promise<void> {
+  private async postWithRetry(url: string, rawToken: string, body: string, label: string): Promise<boolean> {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         const res = await fetch(url, {
@@ -51,7 +64,7 @@ export class IgMessengerService {
 
         if (res.ok) {
           this.logger.debug(`[IgMessenger] Sent ${label}`);
-          return;
+          return true;
         }
 
         const errText = await res.text().catch(() => '');
@@ -68,7 +81,7 @@ export class IgMessengerService {
         this.logger.error(
           `[IgMessenger] Send failed status=${res.status} ${label} body=${errText.slice(0, 200)}`,
         );
-        return;
+        return false;
       } catch (err) {
         if (attempt < MAX_RETRIES) {
           const delay = RETRY_DELAY_MS[attempt];
@@ -81,5 +94,6 @@ export class IgMessengerService {
         }
       }
     }
+    return false;
   }
 }

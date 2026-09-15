@@ -162,7 +162,7 @@ function LizaAvatar({ size }: { size: number }) {
 
 type NavKey =
   | 'OVERVIEW' | 'AGENT_TASKS' | 'ORDERS' | 'PRODUCTS' | 'ACCOUNTING'
-  | 'ANALYTICS' | 'BOT_KNOWLEDGE' | 'PRINT' | 'MEMO_TEMPLATE' | 'CRM'
+  | 'ANALYTICS' | 'BOT_KNOWLEDGE' | 'PRINT' | 'MEMO_TEMPLATE' | 'CRM' | 'INBOX'
   | 'COURIER' | 'BROADCAST' | 'FOLLOWUP' | 'CATALOG' | 'RESTAURANT' | 'FRAUD_CHECKER'
   | 'AUTO_POST' | 'UNIVERSITY' | 'WALLET' | 'CONNECT_FB_PAGE'
   | 'SETTINGS_BUSINESS' | 'SETTINGS_DELIVERY' | 'SETTINGS_BOT'
@@ -191,6 +191,7 @@ const PAGE_LABELS: Record<NavKey, string> = {
   ACCOUNTING: 'হিসাব',
   ANALYTICS: 'অ্যানালিটিক্স',
   BOT_KNOWLEDGE: 'বট নলেজ',
+  INBOX: 'ইনবক্স',
   CRM: 'কাস্টমার',
   BROADCAST: 'ব্রডকাস্ট',
   AUTO_POST: 'অটো পোস্ট',
@@ -302,6 +303,12 @@ const PAGE_SUGGESTIONS: Record<NavKey, string[]> = {
     'VIP tag দেব কীভাবে?',
     'Customer data export করা যায়?',
     'Customer segment তৈরি করব কীভাবে?',
+  ],
+  INBOX: [
+    'Inbox এ কী কী মেসেজ দেখা যায়?',
+    'Facebook, Instagram, WhatsApp আলাদা করে দেখব কীভাবে?',
+    'এখান থেকে reply করা যায়?',
+    'পুরনো conversation খুঁজব কীভাবে?',
   ],
   BROADCAST: [
     'Broadcast message পাঠাব কীভাবে?',

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EncryptionService } from '../common/encryption.service';
+import { MessageLogService } from '../inbox/inbox.module';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = [1000, 2000, 4000]; // exponential backoff
@@ -8,7 +9,10 @@ const RETRY_DELAY_MS = [1000, 2000, 4000]; // exponential backoff
 export class MessengerService {
   private readonly logger = new Logger(MessengerService.name);
 
-  constructor(private readonly encryption: EncryptionService) {}
+  constructor(
+    private readonly encryption: EncryptionService,
+    private readonly messageLog: MessageLogService,
+  ) {}
 
   /**
    * Send a text message via Facebook Messenger Send API.
@@ -49,6 +53,7 @@ export class MessengerService {
 
         if (res.ok) {
           this.logger.log(`[Messenger] Sent psid=${psid} len=${text.length}`);
+          this.messageLog.logByFbPageToken(pageToken, psid, 'OUT', text).catch(() => {});
           return;
         }
 
