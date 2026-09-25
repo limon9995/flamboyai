@@ -547,7 +547,7 @@ export class BotIntentService {
   ): Promise<{ productCodes: string[]; intent: string; shouldReply: boolean }> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return { productCodes: [], intent: 'other', shouldReply: true };
-    const model = process.env.AI_INTENT_MODEL || 'gemini-2.5-flash-lite';
+    const model = process.env.AI_INTENT_MODEL || 'gemini-3.5-flash-lite';
 
     const productList = products.length > 0
       ? products.map((p, i) => `${i + 1}. ${p.code}: ${p.name ?? p.code} (দাম ${p.price}৳, stock: ${p.stockQty > 0 ? p.stockQty + 'টি' : 'নেই'})`).join('\n')

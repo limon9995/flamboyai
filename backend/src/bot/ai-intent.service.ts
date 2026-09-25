@@ -111,7 +111,7 @@ export class AiIntentService {
     const providerEnv = (apiKeysService.getSync('aiIntentProvider')).toLowerCase();
     if (providerEnv === 'gemini' || (!providerEnv && this.geminiApiKey)) {
       this.provider = 'gemini';
-      this.model = apiKeysService.getSync('aiIntentModel') || 'gemini-2.5-flash-lite';
+      this.model = apiKeysService.getSync('aiIntentModel') || 'gemini-3.5-flash-lite';
     } else {
       this.provider = 'openai';
       this.model = apiKeysService.getSync('aiIntentModel') || 'gpt-4o-mini';

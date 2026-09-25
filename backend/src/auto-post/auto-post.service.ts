@@ -129,7 +129,7 @@ export class AutoPostService {
   }
 
   private async callGemini(apiKey: string, system: string, user: string): Promise<string> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
     const body = JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: system ? `${system}\n\n${user}` : user }] }],
       // thinkingBudget: 0 — gemini-2.5-flash defaults to "thinking" mode, which can

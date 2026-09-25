@@ -69,6 +69,14 @@ interface Settings {
   modeAccess?: Record<string, boolean>;
   knowledgeText: string;
   customPersonaPrompt: string;
+  behaviorInstructions: string;
+  promptMode: 'guided' | 'custom';
+  customSystemPrompt: string;
+  // Agent handoff — pause the bot for a conversation on a manual agent reply
+  autoPauseOnHumanTakeover: boolean;
+  autoPauseTimeoutMinutes: number;
+  stopAiCommand: string;
+  startAiCommand: string;
 }
 
 const S0: Settings = {
@@ -84,6 +92,13 @@ const S0: Settings = {
   cardButtons: [],
   knowledgeText: '',
   customPersonaPrompt: '',
+  behaviorInstructions: '',
+  promptMode: 'guided',
+  customSystemPrompt: '',
+  autoPauseOnHumanTakeover: false,
+  autoPauseTimeoutMinutes: 120,
+  stopAiCommand: '',
+  startAiCommand: '',
   automationOn: false, ocrOn: false,
   waEnabled: false, waPhoneNumberId: '', waVerifyToken: '', waTokenSet: false, waFallbackTemplateName: '',
   igEnabled: false, igBusinessAccountId: '', igVerifyToken: '', igTokenSet: false, igCommentToDmEnabled: true,
@@ -324,6 +339,8 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
   const [scrapePreview, setScrapePreview] = useState<string | null>(null);
   const [knowledgeSaving, setKnowledgeSaving] = useState(false);
   const [personaSaving, setPersonaSaving] = useState(false);
+  const [behaviorSaving, setBehaviorSaving] = useState(false);
+  const [promptSaving, setPromptSaving] = useState(false);
   const [unlinkingId, setUnlinkingId] = useState<number | null>(null);
   // Payment credentials state
   const [payCreds, setPayCreds] = useState<{ method: string; type: string; isActive: boolean }[]>([]);
@@ -493,6 +510,27 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
       onToast('✓ Bot Personality saved');
     } catch (e: any) { onToast(e.message, 'error'); }
     finally { setPersonaSaving(false); }
+  };
+
+  const saveBehavior = async () => {
+    setBehaviorSaving(true);
+    try {
+      await request(`${BASE}/settings`, { method: 'PATCH', body: JSON.stringify({ behaviorInstructions: s.behaviorInstructions }) });
+      onToast('✓ Behavior Instructions saved');
+    } catch (e: any) { onToast(e.message, 'error'); }
+    finally { setBehaviorSaving(false); }
+  };
+
+  const savePrompt = async () => {
+    setPromptSaving(true);
+    try {
+      await request(`${BASE}/settings`, {
+        method: 'PATCH',
+        body: JSON.stringify({ promptMode: s.promptMode, customSystemPrompt: s.customSystemPrompt }),
+      });
+      onToast('✓ Custom Prompt saved');
+    } catch (e: any) { onToast(e.message, 'error'); }
+    finally { setPromptSaving(false); }
   };
 
   const reconnectPage = async () => {
@@ -2421,11 +2459,6 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
             {[
               { key: 'automationOn', label: 'Bot Automation', sub: copy('⚠️ Master switch — এটা OFF থাকলে কোনো automation কাজ করবে না', '⚠️ Master switch — if OFF, all automation will stop') },
               ...(!isUniversityMode ? [
-                { key: 'infoModeOn',        label: 'Info Mode',         sub: copy('Product info দিতে পারবে', 'The bot can answer product information questions') },
-                { key: 'orderModeOn',       label: 'Order Mode',        sub: copy('Order নিতে পারবে', 'The bot can take orders') },
-                { key: 'ocrOn',             label: 'OCR Mode',          sub: copy('Screenshot থেকে product code detect করবে', 'Detect product codes from screenshots') },
-                { key: 'printModeOn',       label: 'Print Mode',        sub: copy('Invoice/memo print করা যাবে', 'Enable invoice and memo printing') },
-                { key: 'memoSaveModeOn',    label: 'Memo Save Mode',    sub: copy('Memo auto-save হবে', 'Memos will be auto-saved') },
                 { key: 'callConfirmModeOn', label: 'Call Confirm Mode', sub: copy('Phone call দিয়ে order confirm করবে', 'Confirm orders by phone call') },
                 { key: 'commentReplyOn',    label: 'Comment Reply',     sub: copy('Post-এর comment-এ auto reply দেবে', 'Auto-reply to Facebook post comments') },
                 { key: 'recurringNotifMode', label: '🔔 Subscriber Notification', sub: copy('Order complete/cancel হলে customer কে subscribe করতে বলবে', 'After order complete/cancel, bot asks customer to subscribe') },
@@ -2449,6 +2482,47 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
               <span style={{ fontSize: 11 }}>{copy('এই দুটি permission ছাড়া comment reply কাজ করবে না। Settings → Facebook Page → Reconnect করে নতুন token নিন।', 'Without these two permissions, comment reply will not work. Go to Settings → Facebook Page → Reconnect to get a new token.')}</span>
             </div>
 
+        </Section>
+
+        {/* Agent Handoff — pause bot on human takeover */}
+        <Section title={copy('🙋 Agent Handoff', '🙋 Agent Handoff')} desc={copy('Agent নিজে reply করলে bot কখন থামবে এবং কখন আবার চালু হবে সেটা এখানে ঠিক করুন।', 'Control when the bot pauses for an agent, and when it resumes.')}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Toggle th={th}
+              label={copy('Auto Pause on Human Takeover', 'Auto Pause on Human Takeover')}
+              sub={copy('চালু থাকলে agent Messenger/inbox থেকে যেকোনো message পাঠালেই bot ওই customer-এর জন্য থেমে যাবে।', 'When ON, the bot pauses for that customer the moment an agent sends any message from Messenger/inbox.')}
+              checked={s.autoPauseOnHumanTakeover}
+              onChange={v => setS(p => ({ ...p, autoPauseOnHumanTakeover: v }))} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <Label text={copy('Stop AI Command', 'Stop AI Command')} hint={copy('Agent chat-এ ঠিক এই text/emoji পাঠালে bot থেমে যাবে (Auto Pause toggle না থাকলেও কাজ করবে)।', 'When an agent sends exactly this text/emoji in the chat, the bot pauses — works even if Auto Pause is OFF.')}/>
+                <input style={inp} value={s.stopAiCommand} placeholder="👍"
+                  onChange={e => setS(p => ({ ...p, stopAiCommand: e.target.value }))} maxLength={40} />
+              </div>
+              <div>
+                <Label text={copy('Start AI Command', 'Start AI Command')} hint={copy('Agent chat-এ ঠিক এই text/emoji পাঠালে bot আবার চালু হয়ে যাবে।', 'When an agent sends exactly this text/emoji in the chat, the bot resumes right away.')}/>
+                <input style={inp} value={s.startAiCommand} placeholder="👍👍"
+                  onChange={e => setS(p => ({ ...p, startAiCommand: e.target.value }))} maxLength={40} />
+              </div>
+            </div>
+            <div>
+              <Label text={copy('Auto Pause Timeout', 'Auto Pause Timeout')} hint={copy('Bot থামার এই সময় পর নিজে থেকেই আবার চালু হয়ে যাবে (Start command না দিলেও)।', 'The bot automatically resumes on its own after this much time, even without a Start command.')}/>
+              <select style={inp} value={s.autoPauseTimeoutMinutes}
+                onChange={e => setS(p => ({ ...p, autoPauseTimeoutMinutes: Number(e.target.value) }))}>
+                <option value={10}>{copy('১০ মিনিট', '10 minutes')}</option>
+                <option value={30}>{copy('৩০ মিনিট', '30 minutes')}</option>
+                <option value={60}>{copy('১ ঘণ্টা', '1 hour')}</option>
+                <option value={120}>{copy('২ ঘণ্টা', '2 hours')}</option>
+                <option value={240}>{copy('৪ ঘণ্টা', '4 hours')}</option>
+                <option value={0}>{copy('কখনো না (Never)', 'Never')}</option>
+              </select>
+            </div>
+            <SaveRow onClick={() => save({
+              autoPauseOnHumanTakeover: s.autoPauseOnHumanTakeover,
+              autoPauseTimeoutMinutes: s.autoPauseTimeoutMinutes,
+              stopAiCommand: s.stopAiCommand.trim(),
+              startAiCommand: s.startAiCommand.trim(),
+            })} saving={saving}/>
+          </div>
         </Section>
 
         {/* University Mode */}
@@ -2529,6 +2603,66 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
         <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', margin: 0 }}>🧠 Knowledge & Pricing</h1>
         <p style={{ fontSize: 13, color: th.muted, margin: '3px 0 0' }}>{copy('Bot যা জানবে এবং দাম নিয়ে কীভাবে কথা বলবে', 'What the bot knows and how it handles pricing')}</p>
       </div>
+
+      <div style={{ ...th.card }}>
+        <Section
+          title="✍️ Custom Prompt"
+          desc={copy(
+            'Bot কে চালানোর জন্য নিজের ভাষায় একটাই পূর্ণ prompt লিখুন — role, greeting, product info, discount/delivery/return নিয়ম, order নেওয়ার flow, সব এখানেই। চালু করলে নিচের Knowledge/Behavior/Personality/Pricing আলাদা করে সেট করার দরকার নেই।',
+            'Write one complete prompt in your own words to run the bot — role, greeting, product info, discount/delivery/return rules, order flow, all in one place. When on, you no longer need the separate Knowledge/Behavior/Personality/Pricing sections below.'
+          )}
+        >
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+            {(['guided', 'custom'] as const).map(m => (
+              <button key={m} onClick={() => setS(p => ({ ...p, promptMode: m }))}
+                style={{
+                  ...th.btnSm, flex: 1, justifyContent: 'center',
+                  background: s.promptMode === m ? th.accent : th.surface,
+                  color: s.promptMode === m ? '#fff' : th.textSub,
+                  border: `1px solid ${s.promptMode === m ? th.accent : th.border}`,
+                }}>
+                {m === 'guided' ? copy('🧩 Guided (Default)', '🧩 Guided (Default)') : copy('✍️ Custom Prompt', '✍️ Custom Prompt')}
+              </button>
+            ))}
+          </div>
+
+          {s.promptMode === 'custom' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Label
+                  text={copy('System Prompt', 'System Prompt')}
+                  hint={copy(
+                    'উদাহরণ:\nROLE: Amader Mart-এর sales assistant। Wireless Ear Pick নিয়ে customer-দের সাহায্য করো।\nGreeting, product info, discount rule, delivery/return policy, order collection flow — সব লিখুন।\nProduct-এর দাম/stock bot নিজে থেকেই জানবে, আলাদা করে লেখার দরকার নেই।',
+                    'Example:\nROLE: Amader Mart\'s sales assistant. Help customers with the Wireless Ear Pick.\nWrite the greeting, product info, discount rules, delivery/return policy, and order-collection flow.\nProduct price/stock is injected automatically — no need to hardcode it.'
+                  )}
+                />
+                <span style={{ fontSize: 11, color: s.customSystemPrompt.length > 7500 ? '#f87171' : th.muted }}>
+                  {s.customSystemPrompt.length}/8000
+                </span>
+              </div>
+              <textarea
+                style={{ ...inp, minHeight: 320, resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }}
+                value={s.customSystemPrompt}
+                maxLength={8000}
+                onChange={e => setS(p => ({ ...p, customSystemPrompt: e.target.value }))}
+                placeholder={copy(
+                  'ROLE: ...\n\nCONVERSATION FLOW:\n1. ...\n\nPRODUCT DETAILS:\n...\n\nDISCOUNT RULES:\n...\n\nDELIVERY:\n...\n\nORDER FLOW:\n...',
+                  'ROLE: ...\n\nCONVERSATION FLOW:\n1. ...\n\nPRODUCT DETAILS:\n...\n\nDISCOUNT RULES:\n...\n\nDELIVERY:\n...\n\nORDER FLOW:\n...'
+                )}
+              />
+              <div style={{ fontSize: 11, color: th.muted, marginTop: 4 }}>
+                {copy(
+                  '⚠️ Product-এর live দাম/stock ও order-collection JSON format bot নিজে থেকেই handle করবে — শুধু business behavior/tone/policy লিখুন।',
+                  "⚠️ Live product price/stock and the order-collection JSON format are still handled automatically — just write your business behavior/tone/policy."
+                )}
+              </div>
+            </div>
+          )}
+        </Section>
+        <SaveRow onClick={savePrompt} saving={promptSaving} label="Save Custom Prompt"/>
+      </div>
+
+      {s.promptMode !== 'custom' && (<>
       <div style={{ ...th.card }}>
         {/* AI Knowledge */}
         <Section title="🤖 AI Business Knowledge" desc="এখানে লেখো — AI bot এই তথ্য দিয়ে customer-দের সঠিক reply দেবে">
@@ -2639,6 +2773,49 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
       </div>
 
       <div style={{ ...th.card, marginTop: 16 }}>
+        {/* Behavior Instructions — custom business rules, separate from tone and FAQ */}
+        <Section
+          title="📏 Behavior Instructions (নিয়ম-কানুন)"
+          desc={copy(
+            'Bot সবসময় কী করবে বা কখনো করবে না তা এখানে লিখুন — যেমন নিয়ম, শর্ত। এটা "কী জানবে" (Knowledge) বা "কীভাবে কথা বলবে" (Personality) থেকে আলাদা।',
+            'Write rules the bot must always or never follow — different from Knowledge (facts) and Personality (tone).'
+          )}
+        >
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Label
+                text={copy('Business Behavior Rules', 'Business Behavior Rules')}
+                hint={copy(
+                  'উদাহরণ:\n"কনফার্ম করার আগে সবসময় সাইজ জিজ্ঞেস করবে।"\n"কখনো ছাড় দেবে না, দাম নিয়ে দর কষাকষি করবে না।"\n"রাগান্বিত customer পেলে সাথে সাথে Agent/মানুষের কাছে পাঠাবে।"',
+                  'Example:\n"Always ask about size before confirming an order."\n"Never offer a discount, don\'t negotiate on price."\n"If the customer sounds angry, escalate to a human agent immediately."'
+                )}
+              />
+              <span style={{ fontSize: 11, color: s.behaviorInstructions.length > 2800 ? '#f87171' : th.muted }}>
+                {s.behaviorInstructions.length}/3000
+              </span>
+            </div>
+            <textarea
+              style={{ ...inp, minHeight: 120, resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }}
+              value={s.behaviorInstructions}
+              maxLength={3000}
+              onChange={e => setS(p => ({ ...p, behaviorInstructions: e.target.value }))}
+              placeholder={copy(
+                'উদাহরণ:\nকনফার্ম করার আগে সবসময় সাইজ জিজ্ঞেস করবে।\nকখনো নিজে থেকে ছাড় অফার করবে না।\nকাস্টমার রাগ দেখালে সাথে সাথে "Agent" action দিয়ে human agent-কে জানাবে।',
+                'Example:\nAlways ask for size before confirming.\nNever offer a discount on your own.\nIf a customer sounds angry, escalate to a human agent immediately.'
+              )}
+            />
+            <div style={{ fontSize: 11, color: th.muted, marginTop: 4 }}>
+              {copy(
+                '⚠️ এটা Bot-এর order/payment প্রসেস পরিবর্তন করতে পারবে না — শুধু বাড়তি নিয়ম/আচরণ যোগ করবে।',
+                "⚠️ This can't change the bot's order/payment logic — it only adds extra behavior rules on top."
+              )}
+            </div>
+          </div>
+        </Section>
+        <SaveRow onClick={saveBehavior} saving={behaviorSaving} label="Save Behavior Rules"/>
+      </div>
+
+      <div style={{ ...th.card, marginTop: 16 }}>
         {/* Bot Personality / System Prompt */}
         <Section title="🎭 Bot Personality" desc={copy('Bot কীভাবে কথা বলবে তার নিজস্ব style লিখুন — খালি রাখলে default tone ব্যবহার হবে', "Write your bot's own tone/personality — leave empty to use the default tone")}>
           <div>
@@ -2646,11 +2823,11 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
             <textarea
               style={{ ...inp, minHeight: 120, resize: 'vertical', fontFamily: 'inherit', fontSize: 13 }}
               value={s.customPersonaPrompt}
-              maxLength={2000}
+              maxLength={4000}
               onChange={e => setS(p => ({ ...p, customPersonaPrompt: e.target.value }))}
               placeholder={copy('খালি থাকলে bot এর default personality ব্যবহার হবে...', 'Leave empty to use the bot\'s default personality...')}
             />
-            <div style={{ fontSize: 11, color: th.muted, marginTop: 4 }}>{s.customPersonaPrompt.length}/2000</div>
+            <div style={{ fontSize: 11, color: th.muted, marginTop: 4 }}>{s.customPersonaPrompt.length}/4000</div>
           </div>
         </Section>
         <SaveRow onClick={savePersona} saving={personaSaving} label="Save Personality"/>
@@ -2717,6 +2894,7 @@ export function SettingsPage({ th, pageId, tab, onToast, autoOpenReconnect, user
 
         <SaveRow onClick={savePricing} saving={saving} label="Save Pricing"/>
       </div>
+      </>)}
     </div>
   );
   // ── CALL ──────────────────────────────────────────────────────────────────

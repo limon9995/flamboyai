@@ -86,6 +86,11 @@ export class FacebookService {
   // OAuth dialog when requested. Dropped for now so login isn't blocked;
   // re-add pages_manage_engagement once verification passes to restore the
   // Facebook comment auto-reply feature (pages_manage_posts is unused).
+  // pages_manage_engagement and pages_manage_posts are gated behind Meta
+  // Business Verification for this app (confirmed failing with "Invalid
+  // Scopes" in the live OAuth dialog on 2026-08-15) — do not re-add until
+  // Business Verification passes for app 1620190043007073, or every new
+  // Facebook connect attempt will fail outright.
   private readonly oauthScope =
     'pages_show_list,pages_read_engagement,pages_messaging,pages_manage_metadata';
   private readonly pendingOAuthResults = new Map<string, PendingOAuthResult>();

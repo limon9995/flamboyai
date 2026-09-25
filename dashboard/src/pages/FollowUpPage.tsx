@@ -180,11 +180,11 @@ export function FollowUpPage({ th, pageId, onToast, preset }: {
           <CardHeader th={th} title={copy('⚙️ Auto Follow-up Settings', '⚙️ Auto Follow-up Settings')} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {[
-              { key: 'orderReceived',  label: '📦 Order Received Follow-up',  help: 'Order নেওয়ার কিছুক্ষণ পর customer কে জিজ্ঞেস করা।' },
-              { key: 'orderDelivered', label: '✅ Order Delivered Follow-up',  help: 'Delivery হওয়ার পর customer কে feedback নেওয়া।' },
-              { key: 'abandonedCart',  label: '🛒 Abandoned Cart Reminder',    help: 'Product দেখার পর order না করলে remind করা।' },
-              { key: 'reviewRequest',  label: '⭐ Review চাওয়ার Follow-up',    help: 'Delivery হওয়ার পর customer কে review link পাঠানো হবে — বন্ধ/চালু করতে পারবেন। {{reviewLink}} variable ব্যবহার করুন।' },
-            ].map(({ key, label, help }) => (
+              { key: 'orderReceived',  label: '📦 Order Received Follow-up',  help: 'Order নেওয়ার কিছুক্ষণ পর customer কে জিজ্ঞেস করা।', delayHelp: 'Order এর কত ঘণ্টা পরে message যাবে।', msgHelp: '{{orderId}} variable ব্যবহার করতে পারেন।' },
+              { key: 'orderDelivered', label: '✅ Order Delivered Follow-up',  help: 'Delivery হওয়ার পর customer কে feedback নেওয়া।', delayHelp: 'Delivery এর কত ঘণ্টা পরে message যাবে।', msgHelp: '{{orderId}} variable ব্যবহার করতে পারেন।' },
+              { key: 'abandonedCart',  label: '🛒 Abandoned Cart Reminder',    help: 'Customer "পরে নিব / ভেবে দেখি" বলে চলে গেলে — যারা আগ্রহ দেখিয়েছে শুধু তাদেরই নাম ধরে reminder যাবে।', delayHelp: 'Customer "পরে নিব" বলার কত ঘণ্টা পরে reminder যাবে।', msgHelp: '{{name}} (নাম) ও {{product}} (যে product দেখছিল) variable ব্যবহার করতে পারেন।' },
+              { key: 'reviewRequest',  label: '⭐ Review চাওয়ার Follow-up',    help: 'Delivery হওয়ার পর customer কে review link পাঠানো হবে — বন্ধ/চালু করতে পারবেন। {{reviewLink}} variable ব্যবহার করুন।', delayHelp: 'Delivery এর কত ঘণ্টা পরে review link যাবে।', msgHelp: '{{orderId}} ও {{reviewLink}} variable ব্যবহার করতে পারেন।' },
+            ].map(({ key, label, help, delayHelp, msgHelp }) => (
               <div key={key} style={{ ...th.card2, borderRadius: 12 }}>
                 <Toggle th={th} label={label} sub={help}
                   checked={settings[`${key}Enabled`] || false}
@@ -192,12 +192,12 @@ export function FollowUpPage({ th, pageId, onToast, preset }: {
                 />
                 {settings[`${key}Enabled`] && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: 10, marginTop: 12 }}>
-                    <FieldWithInfo th={th} label="Delay (ঘণ্টা)" helpText="Order এর কত ঘণ্টা পরে message যাবে।">
+                    <FieldWithInfo th={th} label="Delay (ঘণ্টা)" helpText={delayHelp}>
                       <input style={th.input} type="number" min={1} max={168}
                         value={settings[`${key}Delay`] || 24}
                         onChange={e => setSettings((s: any) => ({ ...s, [`${key}Delay`]: Number(e.target.value) }))} />
                     </FieldWithInfo>
-                    <FieldWithInfo th={th} label="Message" helpText="{{orderId}} variable ব্যবহার করতে পারেন।">
+                    <FieldWithInfo th={th} label="Message" helpText={msgHelp}>
                       <input style={th.input}
                         value={settings[`${key}Msg`] || ''}
                         onChange={e => setSettings((s: any) => ({ ...s, [`${key}Msg`]: e.target.value }))} />

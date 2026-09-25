@@ -12,6 +12,7 @@ import {
   CustomFieldDef,
 } from '../conversation-context/conversation-context.service';
 import { DraftOrderHandler } from './handlers/draft-order.handler';
+import { FollowUpService } from '../followup/followup.service';
 import { ProductInfoHandler } from './handlers/product-info.handler';
 import { NegotiationHandler } from './handlers/negotiation.handler';
 import { CrmService } from '../crm/crm.service';
@@ -120,6 +121,7 @@ export class WebhookService implements OnModuleDestroy {
     private readonly telegram: TelegramNotificationService,
     private readonly courier: CourierService,
     private readonly messageLog: MessageLogService,
+    private readonly followUp: FollowUpService,
   ) {}
 
   onModuleDestroy() {
@@ -127,6 +129,71 @@ export class WebhookService implements OnModuleDestroy {
       clearTimeout(entry.timer);
     }
     this.imageBuffer.clear();
+  }
+
+  // ── Smart abandoned-cart follow-up ──────────────────────────────────────────
+  // Fires only when the bot reads the customer as deferring ("pore nibo / vebe
+  // dekhi") AND they showed real buying interest (an active draft or products
+  // we just showed them). It schedules ONE personalized re-engagement after the
+  // page-owner's configured delay — so window-shoppers who go quiet get a gentle
+  // nudge, while random chatters and people who already ordered are left alone.
+  private async maybeScheduleAbandonedFollowUp(
+    page: any,
+    psid: string,
+    text: string,
+    draft: any,
+    awaitingConfirm: boolean,
+  ): Promise<void> {
+    // 1. Did the bot understand this as hesitation/deferral?
+    if (this.botIntent.detectIntent(text, awaitingConfirm) !== 'SOFT_HESITATION')
+      return;
+
+    // 2. Owner must have enabled abandoned-cart follow-ups for this page.
+    const settings = await this.followUp.getSettings(page.id);
+    if (!settings.abandonedCartEnabled) return;
+
+    // 3. Target only interested customers — an active draft, or products we
+    //    presented to them. No interest → no chase.
+    const lastProducts = await this.ctx.getLastPresentedProducts(page.id, psid);
+    const draftItem = draft?.items?.[0];
+    if (!draftItem && lastProducts.length === 0) return;
+
+    // 4. One pending re-engagement per customer — never pile them up.
+    const existing = await this.prisma.followUp.findFirst({
+      where: {
+        pageId: page.id,
+        psid,
+        triggerType: 'abandoned_cart',
+        status: 'pending',
+      },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    // 5. Personalize with the customer's name + the product they were eyeing.
+    const customer = await this.prisma.customer.findUnique({
+      where: { pageId_psid: { pageId: page.id, psid } },
+      select: { name: true },
+    });
+    const name = (draft?.customerName || customer?.name || '').trim() || 'ভাই';
+    const product =
+      (lastProducts[0]?.name || '').trim() ||
+      draftItem?.productCode ||
+      'product';
+    const message = settings.abandonedCartMsg
+      .replace(/\{\{\s*name\s*\}\}/g, name)
+      .replace(/\{\{\s*product\s*\}\}/g, product);
+
+    await this.followUp.schedule(page.id, {
+      psid,
+      triggerType: 'abandoned_cart',
+      message,
+      delayHours: settings.abandonedCartDelay,
+      platform: draft?.platform || 'FACEBOOK',
+    });
+    this.logger.log(
+      `[FollowUp] Scheduled abandoned_cart psid=${psid} page=${page.id} after ${settings.abandonedCartDelay}h`,
+    );
   }
 
   // ── Entry point ────────────────────────────────────────────────────────────
@@ -1273,6 +1340,15 @@ export class WebhookService implements OnModuleDestroy {
               typeof result === 'string' ? result : result.reply;
             await this.sendReplyInChunks(token, psid, replyText);
           }
+          // If the customer is deferring ("pore nibo / vebe dekhi") and showed
+          // real interest, quietly schedule a personalized re-engagement.
+          void this.maybeScheduleAbandonedFollowUp(
+            page,
+            psid,
+            text,
+            draft,
+            awaitingConfirm,
+          ).catch(() => {});
           return;
         }
       }
@@ -4432,7 +4508,7 @@ ${businessInfo}
     if (geminiKey) {
       try {
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${geminiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

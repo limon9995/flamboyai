@@ -1,4 +1,6 @@
 import {
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -10,6 +12,7 @@ import { ConversationContextService } from '../conversation-context/conversation
 import { BroadcastService } from '../broadcast/broadcast.service';
 import { TelegramNotificationService } from '../telegram/telegram-notification.service';
 import { PricingService } from '../pricing/pricing.service';
+import { CourierService } from '../courier/courier.service';
 
 export type OrderStatus =
   | 'RECEIVED'
@@ -29,6 +32,8 @@ export class OrdersService {
     private readonly broadcast: BroadcastService,
     private readonly telegram: TelegramNotificationService,
     private readonly pricing: PricingService,
+    @Inject(forwardRef(() => CourierService))
+    private readonly courier: CourierService,
   ) {}
 
   // ── List / Summary ─────────────────────────────────────────────────────────
@@ -282,6 +287,11 @@ export class OrdersService {
 
     // Fire-and-forget: send recurring notification subscribe prompt if mode is ON
     void this.tryRecurringSubscribePrompt(order.pageIdRef, order.customerPsid);
+
+    // Fire-and-forget: auto-book courier if the merchant has it enabled —
+    // this is the manual/dashboard confirm path, which is how most COD
+    // orders actually become CONFIRMED (they start as RECEIVED)
+    void this.courier.autoBookOnConfirm(order.pageIdRef, id);
 
     return this.prisma.order.findUnique({
       where: { id },
@@ -560,6 +570,7 @@ export class OrdersService {
       this.telegram
         .notify(order.pageIdRef, `✅ Payment verified & Order #${id} confirmed!\n👤 ${order.customerName} | 📞 ${order.phone ?? '-'}`)
         .catch(() => {});
+      void this.courier.autoBookOnConfirm(order.pageIdRef, id);
       return updated;
     }
 
@@ -652,7 +663,7 @@ export class OrdersService {
       include: { items: true },
     });
     if (!order) throw new NotFoundException('Order not found');
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       // V25: BOM ingredient deduction — this path confirms without going
       // through confirmByAgent, so restaurant recipes must deduct here too.
       let ingredientsDeducted = (order as any).ingredientsDeducted === true;
@@ -670,6 +681,8 @@ export class OrdersService {
         },
       });
     });
+    void this.courier.autoBookOnConfirm(pageIdRef, orderId);
+    return updated;
   }
 
   async uploadWebOrderScreenshot(

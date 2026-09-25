@@ -23,6 +23,7 @@ import { OrderOwnerMailerService } from '../../orders/order-owner-mailer.service
 import { AgentCoreFieldDef } from '../../agents/agent-behavior-config.interface';
 import { isRestaurantReady } from '../../common/restaurant-delivery';
 import { PricingService } from '../../pricing/pricing.service';
+import { isSkipReply, queueAiOrderFields } from '../../common/order-fields';
 
 // Verbatim defaults — reproduces today's exact name/phone/address prompts.
 // Used whenever an agent type has no AgentBehaviorConfig.coreFields override
@@ -241,12 +242,7 @@ export class DraftOrderHandler {
 
         // If all three collected, move to next step
         if (draft.customerName && draft.phone && draft.address) {
-          draft.currentStep = this.isAdvanceNeeded(draft, page) ? 'advance_payment' : 'confirm';
-          await this.ctx.saveDraft(pageId, psid, draft);
-          if (draft.currentStep === 'advance_payment') {
-            return this.buildAdvancePrompt(page, draft);
-          }
-          return this.buildSummary(draft, page);
+          return this.proceedAfterCoreFields(pageId, psid, draft, page);
         }
         // Ask for what's still missing
         if (!draft.customerName) return fields.name.askPrompt;
@@ -258,7 +254,18 @@ export class DraftOrderHandler {
     // ── Regex-first gate: skip AI for clear-cut inputs ─────────────────────
     // For phone/name/address steps, if the input is unambiguous, skip the
     // AI reviewDraftStep call entirely (saves cost + avoids false REJECTs).
-    const regexCapture = this.tryRegexCapture(step, text);
+    // "না" to an optional order field means "skip" — must not reach the AI
+    // review, which would read it as an order cancel.
+    const optionalFieldSkip =
+      step.startsWith('cf:') &&
+      Boolean(
+        (draft.pendingCustomFields || []).find((f) => f.label === step.slice(3))
+          ?.optional,
+      ) &&
+      isSkipReply(text);
+    const regexCapture = optionalFieldSkip
+      ? text.trim()
+      : this.tryRegexCapture(step, text);
     if (regexCapture === 'CANCEL') {
       await this.ctx.clearDraft(pageId, psid);
       return null;
@@ -301,27 +308,13 @@ export class DraftOrderHandler {
         confirmIntent === 'CONFIRM' ||
         /^(ha|haa|hea|yes|ok|হ্যাঁ|জি|ঠিক)/i.test(workingText.trim())
       ) {
-        // Keep saved address → move to advance_payment check or confirm
-        if (this.isAdvanceNeeded(draft, page)) {
-          draft.currentStep = 'advance_payment';
-          await this.ctx.saveDraft(pageId, psid, draft);
-          return this.buildAdvancePrompt(page, draft);
-        }
-        draft.currentStep = 'confirm';
-        await this.ctx.saveDraft(pageId, psid, draft);
-        return this.buildSummary(draft, page);
+        // Keep saved address → order fields, then advance_payment check or confirm
+        return this.proceedAfterCoreFields(pageId, psid, draft, page);
       }
       // Customer gave a new address
       if (this.isAddressLike(workingText)) {
         draft.address = workingText.trim();
-        if (this.isAdvanceNeeded(draft, page)) {
-          draft.currentStep = 'advance_payment';
-          await this.ctx.saveDraft(pageId, psid, draft);
-          return this.buildAdvancePrompt(page, draft);
-        }
-        draft.currentStep = 'confirm';
-        await this.ctx.saveDraft(pageId, psid, draft);
-        return this.buildSummary(draft, page);
+        return this.proceedAfterCoreFields(pageId, psid, draft, page);
       }
       return `আগের ঠিকানায় পাঠাব?\n📍 *${draft.address}*\n\n"হ্যাঁ" বললে এই ঠিকানায় যাবে, অথবা নতুন ঠিকানা লিখুন 💖`;
     }
@@ -486,7 +479,9 @@ export class DraftOrderHandler {
 
       // Validate against choices if field has a predefined list
       let resolvedValue = workingText.trim();
-      if (currentField?.choices?.length) {
+      const skipped =
+        Boolean(currentField?.optional) && isSkipReply(resolvedValue);
+      if (!skipped && currentField?.choices?.length) {
         const choices = currentField.choices;
 
         // 1. Exact match first (case-insensitive) — e.g. "34", "M", "নীল"
@@ -514,10 +509,12 @@ export class DraftOrderHandler {
         }
       }
 
-      draft.customFieldValues = {
-        ...(draft.customFieldValues || {}),
-        [fieldLabel]: resolvedValue,
-      };
+      if (!skipped) {
+        draft.customFieldValues = {
+          ...(draft.customFieldValues || {}),
+          [fieldLabel]: resolvedValue,
+        };
+      }
       draft.pendingCustomFields = (draft.pendingCustomFields || []).filter(
         (f) => f.label !== fieldLabel,
       );
@@ -527,6 +524,12 @@ export class DraftOrderHandler {
         draft.currentStep = `cf:${next.label}`;
         await this.ctx.saveDraft(pageId, psid, draft);
         return this.promptForCustomField(next);
+      }
+
+      // Page order fields are asked after name/phone/address — continue
+      // straight to payment/confirm instead of re-asking customer info
+      if (draft.customerName && draft.phone && draft.address) {
+        return this.proceedAfterCoreFields(pageId, psid, draft, page);
       }
 
       // All custom fields done → now collect customer info
@@ -679,6 +682,25 @@ export class DraftOrderHandler {
         ? `\n\n${(draft as any).milestoneMessage}`
         : '';
       return `ঠিক আছে 💖 এখন ${fields.address.label} দিন।${loyaltyLine}${milestoneLine}`;
+    }
+
+    return this.proceedAfterCoreFields(pageId, psid, draft, page);
+  }
+
+  /**
+   * Name/phone/address are all collected — ask the page's AI-visible order
+   * fields first (once per draft), then move on to advance payment or the
+   * confirm summary. Every path that completes the core fields funnels here.
+   */
+  private async proceedAfterCoreFields(
+    pageId: number,
+    psid: string,
+    draft: DraftSession,
+    page: any,
+  ): Promise<string> {
+    if (queueAiOrderFields(draft, page)) {
+      await this.ctx.saveDraft(pageId, psid, draft);
+      return this.promptForCustomField(draft.pendingCustomFields![0]);
     }
 
     // All collected → check if advance payment required
@@ -961,6 +983,9 @@ export class DraftOrderHandler {
           negotiationRequested: draft.negotiationRequested ?? false,
           customerOfferedPrice: draft.offeredPrice ?? null,
           orderNote: combinedNote,
+          customFieldsJson: Object.keys(draft.customFieldValues || {}).length
+            ? JSON.stringify(draft.customFieldValues)
+            : null,
           paymentStatus,
           transactionId: draft.paymentProof ?? null,
           paymentScreenshotUrl: draft.paymentScreenshotUrl ?? null,
@@ -1078,47 +1103,14 @@ export class DraftOrderHandler {
       this.orderOwnerMailer.sendNewOrderAlert(pageId, order.id).catch(() => {});
     }
 
-    // Auto courier booking — only when the order is already CONFIRMED and the
-    // merchant has enabled autoBookOnConfirm with a non-manual default courier
+    // Auto courier booking — only when the order is already CONFIRMED (e.g.
+    // advance payment paid upfront). CourierService.autoBookOnConfirm() also
+    // checks autoBookOnConfirm/defaultCourier itself and is the single
+    // shared hook called from every place an order becomes CONFIRMED (see
+    // orders.service.ts and call.service.ts), so a COD order confirmed
+    // later via the dashboard or a confirmation call gets auto-booked too.
     if (orderStatus === 'CONFIRMED') {
-      this.courier
-        .getSettings(pageId)
-        .then((raw) => {
-          const settings = this.courier.parseSettings(raw);
-          if (
-            settings.autoBookOnConfirm &&
-            settings.defaultCourier !== 'manual'
-          ) {
-            return this.courier
-              .bookShipment(pageId, {
-                orderId: order.id,
-                pageId,
-                courier: settings.defaultCourier,
-                recipientName: order.customerName || 'Customer',
-                recipientPhone: order.phone || '',
-                recipientAddress: order.address || '',
-                codAmount: subtotal,
-              })
-              .then(() =>
-                this.telegram.notify(
-                  pageId,
-                  `📦 Order #${order.id} auto-booked with ${settings.defaultCourier}`,
-                ),
-              )
-              .catch((e: any) => {
-                this.logger.error(
-                  `[AutoBook] Failed for order ${order.id}: ${e.message}`,
-                );
-                this.telegram.notify(
-                  pageId,
-                  `⚠️ Auto courier booking failed for Order #${order.id}: ${e.message}`,
-                );
-              });
-          }
-        })
-        .catch((e: any) =>
-          this.logger.error(`[AutoBook] Settings lookup failed: ${e.message}`),
-        );
+      this.courier.autoBookOnConfirm(pageId, order.id).catch(() => {});
     }
 
     this.crm
@@ -1479,12 +1471,14 @@ export class DraftOrderHandler {
     return null;
   }
 
-  private promptForCustomField(field: CustomFieldDef): string {
+  promptForCustomField(field: CustomFieldDef): string {
+    const help = field.helpText ? `\n💡 ${field.helpText}` : '';
+    const skip = field.optional ? `\n(না থাকলে "না" লিখুন)` : '';
     if (field.choices?.length) {
       const opts = field.choices.map((c, i) => `${i + 1}. ${c}`).join('\n');
-      return `${field.label} কোনটা নেবেন? 💖\n${opts}`;
+      return `${field.label} কোনটা নেবেন? 💖\n${opts}${help}${skip}`;
     }
-    return `${field.label} জানান 💖`;
+    return `${field.label} জানান 💖${help}${skip}`;
   }
 
   isInsideDhaka(address: string, page: any): boolean {

@@ -184,21 +184,45 @@ export class AdminService {
             lastReconnectedAt: true,
             previousPageId: true,
             createdAt: true,
+            creditBalance: true,
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
-    return users.map((u) => ({
-      id: u.id,
-      username: u.username,
-      name: u.name,
-      email: u.email,
-      isActive: u.isActive,
-      createdAt: u.createdAt,
-      pages: u.pages,
-      pageCount: u.pages.length,
-    }));
+
+    // Total credits used per page = sum of all negative (deduction) wallet
+    // transactions. One grouped query, then mapped onto each user's pages —
+    // avoids an N+1 query per user.
+    const usageRows = await this.prisma.walletTransaction.groupBy({
+      by: ['pageId'],
+      where: { amountCredit: { lt: 0 } },
+      _sum: { amountCredit: true },
+    });
+    const usedByPage = new Map<number, number>();
+    for (const r of usageRows) {
+      usedByPage.set(r.pageId, Math.abs(r._sum.amountCredit || 0));
+    }
+
+    return users.map((u) => {
+      const credits = u.pages.reduce((s, p) => s + (p.creditBalance || 0), 0);
+      const creditUsed = u.pages.reduce(
+        (s, p) => s + (usedByPage.get(p.id) || 0),
+        0,
+      );
+      return {
+        id: u.id,
+        username: u.username,
+        name: u.name,
+        email: u.email,
+        isActive: u.isActive,
+        createdAt: u.createdAt,
+        pages: u.pages,
+        pageCount: u.pages.length,
+        credits,
+        creditUsed,
+      };
+    });
   }
 
   async setUserAccountStatus(userId: string, isActive: boolean) {

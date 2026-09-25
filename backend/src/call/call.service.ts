@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { TtsService } from './tts.service';
+import { CourierService } from '../courier/courier.service';
 
 export type CallResult = {
   success: boolean;
@@ -31,6 +32,7 @@ export class CallService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tts: TtsService,
+    private readonly courier: CourierService,
   ) {}
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -198,6 +200,9 @@ export class CallService {
       where: { id: attempt.orderId },
       data: orderPatch,
     });
+    if (orderPatch.status === 'CONFIRMED') {
+      void this.courier.autoBookOnConfirm(attempt.pageId, attempt.orderId);
+    }
 
     if (hasValidSelection) {
       this.clearQueuedRetry(attempt.orderId);
@@ -227,6 +232,7 @@ export class CallService {
         confirmedAt: new Date(),
       },
     });
+    void this.courier.autoBookOnConfirm(pageId, orderId);
     this.logger.log(`[CALL] order=${orderId} confirmed by agent`);
     return { success: true, message: 'Confirmed by agent' };
   }

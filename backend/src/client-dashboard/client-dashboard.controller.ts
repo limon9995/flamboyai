@@ -1057,8 +1057,88 @@ export class ClientDashboardController {
   ) {
     return this.courier.bookShipment(this.pid(r, p), {
       ...b,
+      orderId: Number(b?.orderId),
       pageId: this.pid(r, p),
     });
+  }
+
+  // ── V29: Courier booking dialog ──────────────────────────────────────────
+  @Get(':pageId/courier/booking-draft/:orderId')
+  courierBookingDraft(
+    @Param('pageId') p: string,
+    @Param('orderId') o: string,
+    @Req() r: any,
+  ) {
+    return this.courier.getBookingDraft(this.pid(r, p), Number(o));
+  }
+  @Patch(':pageId/courier/credentials/:courier')
+  courierSaveCredentials(
+    @Param('pageId') p: string,
+    @Param('courier') c: string,
+    @Body() b: any,
+    @Req() r: any,
+  ) {
+    return this.courier.saveCredentials(this.pid(r, p), c, b || {});
+  }
+  @Patch(':pageId/courier/field-map/:courier')
+  courierSaveFieldMap(
+    @Param('pageId') p: string,
+    @Param('courier') c: string,
+    @Body() b: any,
+    @Req() r: any,
+  ) {
+    return this.courier.saveFieldMap(this.pid(r, p), c, b || {});
+  }
+  @Get(':pageId/courier/pathao/cities')
+  pathaoCities(@Param('pageId') p: string, @Req() r: any) {
+    return this.courier.pathaoCities(this.pid(r, p));
+  }
+  @Get(':pageId/courier/pathao/zones/:cityId')
+  pathaoZones(
+    @Param('pageId') p: string,
+    @Param('cityId') c: string,
+    @Req() r: any,
+  ) {
+    return this.courier.pathaoZones(this.pid(r, p), Number(c));
+  }
+  @Get(':pageId/courier/pathao/areas/:zoneId')
+  pathaoAreas(
+    @Param('pageId') p: string,
+    @Param('zoneId') z: string,
+    @Req() r: any,
+  ) {
+    return this.courier.pathaoAreas(this.pid(r, p), Number(z));
+  }
+  @Get(':pageId/courier/pathao/stores')
+  pathaoStores(@Param('pageId') p: string, @Req() r: any) {
+    return this.courier.pathaoStores(this.pid(r, p));
+  }
+
+  // ── V29: Edit Order Fields ───────────────────────────────────────────────
+  @Get(':pageId/order-fields')
+  orderFields(@Param('pageId') p: string, @Req() r: any) {
+    return this.svc.getOrderFields(this.pid(r, p));
+  }
+  @Patch(':pageId/order-fields')
+  saveOrderFields(
+    @Param('pageId') p: string,
+    @Body() b: any,
+    @Req() r: any,
+  ) {
+    return this.svc.saveOrderFields(this.pid(r, p), b?.fields);
+  }
+  @Patch(':pageId/orders/:orderId/custom-fields')
+  saveOrderCustomFields(
+    @Param('pageId') p: string,
+    @Param('orderId') o: string,
+    @Body() b: any,
+    @Req() r: any,
+  ) {
+    return this.svc.saveOrderCustomFieldValues(
+      this.pid(r, p),
+      Number(o),
+      b?.values,
+    );
   }
   @Post(':pageId/courier/bulk-book') courierBulkBook(
     @Param('pageId') p: string,

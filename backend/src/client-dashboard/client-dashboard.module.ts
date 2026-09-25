@@ -51,5 +51,6 @@ import { ClientDashboardController } from './client-dashboard.controller';
   ],
   providers: [ClientDashboardService],
   controllers: [ClientDashboardController],
+  exports: [ClientDashboardService],
 })
 export class ClientDashboardModule {}

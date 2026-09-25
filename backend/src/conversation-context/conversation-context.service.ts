@@ -13,6 +13,8 @@ export interface DraftItem {
 export interface CustomFieldDef {
   label: string; // e.g. "Size"
   choices?: string[]; // e.g. ["S","M","L","XL"] — empty/absent means free text
+  optional?: boolean; // V29: page order fields — customer may reply "না" to skip
+  helpText?: string; // V29: extra hint shown with the question
 }
 
 export interface DraftSession {
@@ -30,6 +32,9 @@ export interface DraftSession {
   // V17: product-specific custom fields (size, color, etc.)
   pendingCustomFields?: CustomFieldDef[];
   customFieldValues?: Record<string, string>;
+  // V29: true once the page's AI-visible order fields were queued into
+  // pendingCustomFields (so they're asked only once per draft)
+  orderFieldsQueued?: boolean;
   // V17: advance payment proof (transaction ID / "screenshot sent")
   paymentProof?: string;
   paymentScreenshotUrl?: string; // URL of screenshot customer sent
@@ -177,13 +182,14 @@ export class ConversationContextService {
   async isAgentHandling(
     pageIdRef: number,
     customerPsid: string,
+    timeoutMinutes: number = 120,
   ): Promise<boolean> {
     const session = await this.getSession(pageIdRef, customerPsid);
     if (!session?.agentHandling) return false;
-    // Auto-expire after 2 hours
-    if (session.agentHandlingAt) {
+    // Auto-expire after the page's configured timeout (0 = never auto-resume)
+    if (session.agentHandlingAt && timeoutMinutes > 0) {
       const ageMs = Date.now() - new Date(session.agentHandlingAt).getTime();
-      if (ageMs > 2 * 60 * 60 * 1000) {
+      if (ageMs > timeoutMinutes * 60 * 1000) {
         await this.setAgentHandling(pageIdRef, customerPsid, false);
         return false;
       }

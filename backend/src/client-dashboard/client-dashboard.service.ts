@@ -27,6 +27,10 @@ import { AdminService } from '../admin/admin.service';
 import { PricingService } from '../pricing/pricing.service';
 import { PartnerService } from '../partner/partner.service';
 import {
+  normalizeOrderFields,
+  parseOrderFields,
+} from '../common/order-fields';
+import {
   haversineKm,
   isRestaurantReady,
   isValidLat,
@@ -205,6 +209,8 @@ export class ClientDashboardService {
           select: {
             status: true,
             courierName: true,
+            trackingId: true,
+            trackingUrl: true,
           },
         },
       },
@@ -404,6 +410,48 @@ export class ClientDashboardService {
       where: { id: orderId, pageIdRef: pageId },
       include: { items: true },
     });
+  }
+
+  // ── V29: Edit Order Fields ─────────────────────────────────────────────────
+  async getOrderFields(pageId: number) {
+    const page = await this.prisma.page.findUnique({
+      where: { id: pageId },
+      select: { orderFieldsJson: true },
+    });
+    return { fields: parseOrderFields(page?.orderFieldsJson) };
+  }
+
+  async saveOrderFields(pageId: number, raw: unknown) {
+    if (!Array.isArray(raw))
+      throw new BadRequestException('fields must be an array');
+    const fields = normalizeOrderFields(raw);
+    await this.prisma.page.update({
+      where: { id: pageId },
+      data: { orderFieldsJson: fields.length ? JSON.stringify(fields) : null },
+    });
+    return { fields };
+  }
+
+  /** Merchant edits an order's custom field values (blank value = remove). */
+  async saveOrderCustomFieldValues(pageId: number, orderId: number, raw: any) {
+    await this.ensureOrder(pageId, orderId);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+      throw new BadRequestException('values must be an object');
+    const values: Record<string, string> = {};
+    for (const [k, v] of Object.entries(raw).slice(0, 40)) {
+      const key = String(k).trim().slice(0, 60);
+      const val = String(v ?? '').trim().slice(0, 500);
+      if (key && val) values[key] = val;
+    }
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        customFieldsJson: Object.keys(values).length
+          ? JSON.stringify(values)
+          : null,
+      },
+    });
+    return { values };
   }
 
   async updateOrder(pageId: number, orderId: number, body: any) {
@@ -1489,6 +1537,17 @@ Return ONLY valid JSON (no markdown):
       knowledgeText: page.knowledgeText ?? '',
       // Bot personality — per-page override of the shared agent-type persona
       customPersonaPrompt: page.customPersonaPrompt ?? '',
+      // Business-specific behavior rules — supplementary to, cannot override, the fixed task rules
+      behaviorInstructions: page.behaviorInstructions ?? '',
+      // Custom Prompt mode — client's own full system prompt replaces the
+      // hardcoded phrasing blocks when promptMode='custom'
+      promptMode: page.promptMode ?? 'guided',
+      customSystemPrompt: page.customSystemPrompt ?? '',
+      // Agent handoff — pause bot on human takeover
+      autoPauseOnHumanTakeover: Boolean(page.autoPauseOnHumanTakeover),
+      autoPauseTimeoutMinutes: page.autoPauseTimeoutMinutes ?? 120,
+      stopAiCommand: page.stopAiCommand ?? '',
+      startAiCommand: page.startAiCommand ?? '',
       // Pricing (from bot-knowledge config)
       pricingPolicy: cfg?.pricingPolicy || {},
       // Call — all fields explicit
@@ -1586,6 +1645,14 @@ Return ONLY valid JSON (no markdown):
       // AI / Bot
       'knowledgeText',
       'customPersonaPrompt',
+      'behaviorInstructions',
+      'promptMode',
+      'customSystemPrompt',
+      // Agent handoff — pause bot on human takeover
+      'autoPauseOnHumanTakeover',
+      'autoPauseTimeoutMinutes',
+      'stopAiCommand',
+      'startAiCommand',
       'textFallbackAiOn',
       'businessBotOn',
       'businessInfo',
@@ -1615,6 +1682,31 @@ Return ONLY valid JSON (no markdown):
         }
       }
       pagePatch[k] = nextVal;
+    }
+    // AI / Bot text fields — explicit trim/cap (the generic whitelist loop
+    // above applies none; the dashboard <textarea> maxLength is bypassable
+    // via direct API calls, so enforce limits server-side too)
+    if (typeof pagePatch.knowledgeText === 'string')
+      pagePatch.knowledgeText = pagePatch.knowledgeText.slice(0, 3000);
+    if (typeof pagePatch.customPersonaPrompt === 'string')
+      pagePatch.customPersonaPrompt = pagePatch.customPersonaPrompt.trim().slice(0, 4000) || null;
+    if (typeof pagePatch.behaviorInstructions === 'string')
+      pagePatch.behaviorInstructions = pagePatch.behaviorInstructions.trim().slice(0, 3000);
+    if (typeof pagePatch.customSystemPrompt === 'string')
+      pagePatch.customSystemPrompt = pagePatch.customSystemPrompt.trim().slice(0, 8000) || null;
+    if (typeof pagePatch.promptMode === 'string')
+      pagePatch.promptMode = ['guided', 'custom'].includes(pagePatch.promptMode)
+        ? pagePatch.promptMode
+        : 'guided';
+    // Agent handoff — one exact text/emoji command each way, capped short
+    // since these are meant to be typed/tapped quickly by a human agent
+    if (typeof pagePatch.stopAiCommand === 'string')
+      pagePatch.stopAiCommand = pagePatch.stopAiCommand.trim().slice(0, 40) || null;
+    if (typeof pagePatch.startAiCommand === 'string')
+      pagePatch.startAiCommand = pagePatch.startAiCommand.trim().slice(0, 40) || null;
+    if (pagePatch.autoPauseTimeoutMinutes !== undefined) {
+      const n = Number(pagePatch.autoPauseTimeoutMinutes);
+      pagePatch.autoPauseTimeoutMinutes = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 120;
     }
     // V24: Restaurant mode fields — explicit sanitization (never through the
     // generic whitelist: coordinates and slabs need validation, and the flag

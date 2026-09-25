@@ -41,7 +41,7 @@ export class UniversityBotService {
   ) {
     this.openaiKey = apiKeys.getSync('openaiApiKey');
     this.provider = apiKeys.getSync('aiIntentProvider') || 'gemini';
-    this.model = apiKeys.getSync('aiIntentModel') || 'gemini-2.5-flash-lite';
+    this.model = apiKeys.getSync('aiIntentModel') || 'gemini-3.5-flash-lite';
   }
 
   async handleMessage(page: Page, psid: string, text: string): Promise<string | null> {

@@ -97,6 +97,12 @@ export class AdminController {
   ) {
     return this.svc.setUserAccountStatus(userId, b.isActive);
   }
+  // Impersonate: mint a session for the target user so the admin can log in
+  // as them and see their whole dashboard.
+  @Post('users/:userId/impersonate')
+  impersonate(@Param('userId') userId: string) {
+    return this.authService.adminImpersonate(userId);
+  }
   @Patch('pages/:pageId/website-status')
   setWebsiteStatus(
     @Param('pageId') p: string,

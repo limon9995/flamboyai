@@ -21,7 +21,7 @@ export class GeminiVisionProvider implements VisionAnalysisProvider {
     private readonly apiKeysService: ApiKeysService,
     private readonly rotator: GeminiKeyRotatorService,
   ) {
-    this.model = apiKeysService.getSync('visionModel') || 'gemini-2.5-flash';
+    this.model = apiKeysService.getSync('visionModel') || 'gemini-3.5-flash';
   }
 
   private getKey(): string {

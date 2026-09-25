@@ -4,26 +4,14 @@ import type { Theme } from '../components/ui';
 import { API_BASE, useApi } from '../hooks/useApi';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface KwQuestion {
-  key: string; label: string; realMeaning: string; helpText: string;
-  keywords: string[]; replyTemplate: string; enabled: boolean;
-  replyType: string; priority: number; source?: string;
-}
 interface SystemReply { template: string; fallback: string; enabled: boolean; }
 interface AreaRule { areaName: string; aliases: string[]; zoneType: 'inside_dhaka' | 'outside_dhaka'; active: boolean; }
 interface BotConfig {
-  questions: KwQuestion[];
   systemReplies: Record<string, SystemReply>;
-  globalSuggestions: { key: string; label: string; realMeaning: string; keywords: string[]; helpText: string }[];
   areaRules?: { globalInsideDhaka: AreaRule[]; clientCustomAreas: AreaRule[]; };
 }
-interface LearningLog {
-  id: string; pageId: number; message: string; normalized: string;
-  bestGuess: any; suggestedKeywords: string[]; createdAt: string;
-  customer?: { psid: string; name?: string; phone?: string } | null;
-}
 
-type BkTab = 'questions' | 'system-replies' | 'pricing-info' | 'area-rules' | 'learning';
+type BkTab = 'system-replies' | 'area-rules';
 
 const SYSTEM_REPLY_KEYS = [
   'ocr_processing','ocr_fail','order_received','order_confirmed',
@@ -44,8 +32,6 @@ const REPLY_KEY_HELP: Record<string, string> = {
   generic_fallback:  'Bot কিছু না বুঝলে এই default message যাবে।',
 };
 
-const VARIABLES_HELP = '{{productCode}} {{productPrice}} {{productStock}} {{insideFee}} {{outsideFee}} {{businessName}} {{deliveryTime}}';
-
 // ── InfoTooltip for system reply keys ─────────────────────────────────────────
 function ReplyKeyBadge({ replyKey, th }: { replyKey: string; th: Theme }) {
   return (
@@ -63,30 +49,14 @@ export function BotKnowledgePage({ th, pageId, onToast }: {
   th: Theme; pageId: number; onToast: (m: string, t?: any) => void;
 }) {
   const { request } = useApi();
-  const [tab, setTab]         = useState<BkTab>('questions');
+  const [tab, setTab]         = useState<BkTab>('system-replies');
   const [cfg, setCfg]         = useState<BotConfig | null>(null);
-  const [log, setLog]         = useState<LearningLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
-  const [editQ, setEditQ]     = useState<KwQuestion | null>(null);
   const [editReplies, setEditReplies] = useState<Record<string, string>>({});
-  const [kwInput, setKwInput] = useState('');
-  const [expandedKw, setExpandedKw] = useState<Set<string>>(new Set());
-  const [pricingInfo, setPricingInfo]   = useState('');
-  const [savingPricing, setSavingPricing] = useState(false);
   const [customAreas, setCustomAreas] = useState<AreaRule[]>([]);
   const [areaForm, setAreaForm] = useState({ areaName: '', aliases: '', zoneType: 'inside_dhaka' as 'inside_dhaka' | 'outside_dhaka' });
   const [savingArea, setSavingArea] = useState(false);
-
-  // ── Learning Log action state ────────────────────────────────────────────────
-  const [activeLogId, setActiveLogId]       = useState<string | null>(null);
-  const [selectedKws, setSelectedKws]       = useState<string[]>([]);
-  const [logAction, setLogAction]           = useState<'add_to_existing' | 'create_new'>('add_to_existing');
-  const [logTargetQ, setLogTargetQ]         = useState('');
-  const [logNewLabel, setLogNewLabel]       = useState('');
-  const [logNewReply, setLogNewReply]       = useState('');
-  const [logNewTarget, setLogNewTarget]     = useState<'global' | 'client'>('client');
-  const [logSaving, setLogSaving]           = useState(false);
 
   const BASE = `${API_BASE}/client-dashboard/${pageId}/bot-knowledge`;
 
@@ -96,7 +66,6 @@ export function BotKnowledgePage({ th, pageId, onToast }: {
       const c = await request<BotConfig>(BASE);
       setCfg(c);
       setCustomAreas(c.areaRules?.clientCustomAreas || []);
-      setPricingInfo((c as any).pricingInfo || '');
       const r: Record<string, string> = {};
       for (const k of SYSTEM_REPLY_KEYS) r[k] = c.systemReplies?.[k]?.template || '';
       setEditReplies(r);
@@ -104,21 +73,7 @@ export function BotKnowledgePage({ th, pageId, onToast }: {
     finally { setLoading(false); }
   }, [pageId]);
 
-  const loadLog = useCallback(async () => {
-    try { setLog(await request<LearningLog[]>(`${BASE}/learning-log`)); } catch {}
-  }, [pageId]);
-
   useEffect(() => { loadConfig(); }, [loadConfig]);
-  useEffect(() => { if (tab === 'learning') loadLog(); }, [tab, loadLog]);
-
-  const saveQuestions = async (questions: KwQuestion[]) => {
-    setSaving(true);
-    try {
-      await request(`${BASE}/questions`, { method: 'PATCH', body: JSON.stringify({ questions }) });
-      onToast('✅ Questions saved'); await loadConfig();
-    } catch (e: any) { onToast(e.message, 'error'); }
-    finally { setSaving(false); }
-  };
 
   const saveReplies = async () => {
     setSaving(true);
@@ -133,42 +88,11 @@ export function BotKnowledgePage({ th, pageId, onToast }: {
     finally { setSaving(false); }
   };
 
-  const importGlobal = async (key: string) => {
-    try {
-      await request(`${BASE}/import-global/${key}`, { method: 'POST' });
-      onToast(`✅ "${key}" imported`); await loadConfig();
-    } catch (e: any) { onToast(e.message, 'error'); }
-  };
-
-  const toggleQ    = async (q: KwQuestion) => saveQuestions(cfg!.questions.map(x => x.key === q.key ? { ...x, enabled: !x.enabled } : x));
-  const deleteQ    = async (key: string)    => saveQuestions(cfg!.questions.filter(q => q.key !== key));
-  const saveEditQ  = async () => {
-    if (!editQ) return;
-    const q = { ...editQ };
-    if (!q.key) q.key = q.label.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/__+/g, '_').replace(/^_|_$/g, '') || `custom_${Date.now()}`;
-    const updated = cfg!.questions.find(x => x.key === q.key)
-      ? cfg!.questions.map(x => x.key === q.key ? q : x)
-      : [...cfg!.questions, q];
-    await saveQuestions(updated);
-    setEditQ(null);
-  };
-
-  const newQuestion = () => {
-    setKwInput('');
-    setEditQ({
-      key: '', label: '', realMeaning: '', helpText: '',
-      keywords: [], replyTemplate: '', enabled: true, replyType: 'text', priority: 99,
-    });
-  };
-
   const TabBar = () => (
     <div style={{ display: 'flex', gap: 3, background: th.surface, borderRadius: 10, padding: 3, border: `1px solid ${th.border}`, flexWrap: 'wrap' }}>
       {([
-        ['questions',       '💬 Questions'],
         ['system-replies',  '🔔 System Replies'],
-        ['pricing-info',    '💰 Pricing Info'],
         ['area-rules',      '🗺️ Area Rules'],
-        ['learning',        '🧠 Learning Log'],
       ] as const).map(([k, l]) => (
         <button key={k} onClick={() => setTab(k)} style={{
           padding: '8px 16px', borderRadius: 9, border: 'none', cursor: 'pointer',
@@ -186,271 +110,6 @@ export function BotKnowledgePage({ th, pageId, onToast }: {
     </div>
   );
   if (!cfg) return null;
-
-  // ── QUESTIONS TAB ─────────────────────────────────────────────────────────
-  const QuestionsTab = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-      {/* Edit / New panel */}
-      {editQ && (
-        <div style={{ ...th.card, border: `2px solid ${th.accent}`, display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-            <div>
-              <div style={{ fontWeight: 900, fontSize: 16 }}>
-                {!editQ.key ? '➕ নতুন Question তৈরি করুন' : `✏️ Edit: ${editQ.label || editQ.key}`}
-              </div>
-              <div style={{ fontSize: 12, color: th.muted, marginTop: 2 }}>Bot এই question টা কীভাবে চিনবে এবং কী reply করবে সেটা সেট করুন</div>
-            </div>
-            <button style={th.btnGhost} onClick={() => setEditQ(null)}>✕</button>
-          </div>
-
-          {/* Step 1 */}
-          <div style={{ background: th.surface, borderRadius: 12, padding: '16px 18px', marginBottom: 12, border: `1px solid ${th.border}` }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: th.accent, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 14 }}>
-              Step 1 · Question পরিচয়
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: th.text, marginBottom: 5 }}>
-                  প্রশ্নের নাম <span style={{ color: '#ef4444' }}>*</span>
-                </div>
-                <input style={th.input} placeholder="যেমন: ডেলিভারি কতদিনে পাব"
-                  value={editQ.label}
-                  onChange={e => setEditQ(q => ({ ...q!, label: e.target.value }))} />
-                <div style={{ fontSize: 10.5, color: th.muted, marginTop: 4 }}>Dashboard এ এই নামে দেখাবে</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: th.text, marginBottom: 5 }}>Reply Type</div>
-                <select style={th.input} value={editQ.replyType}
-                  onChange={e => setEditQ(q => ({ ...q!, replyType: e.target.value }))}>
-                  <option value="text">text — সাধারণ reply</option>
-                  <option value="product">product — product info দেখাবে</option>
-                  <option value="settings">settings — delivery fee/time দেখাবে</option>
-                  <option value="payment">payment — payment info দেখাবে</option>
-                </select>
-                <div style={{ fontSize: 10.5, color: th.muted, marginTop: 4 }}>কোন ধরনের reply</div>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: th.text, marginBottom: 5 }}>
-                  Real Meaning <span style={{ fontSize: 10.5, color: th.muted, fontWeight: 400 }}>(bot এর জন্য বাংলা/English এ লিখুন)</span>
-                </div>
-                <input style={th.input} placeholder="customer asks about how many days delivery takes"
-                  value={editQ.realMeaning}
-                  onChange={e => setEditQ(q => ({ ...q!, realMeaning: e.target.value }))} />
-                <div style={{ fontSize: 10.5, color: th.muted, marginTop: 4 }}>Bot এই meaning দেখে question টা বোঝার চেষ্টা করে — ইংরেজিতে লিখলে ভালো কাজ করে</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Step 2 */}
-          <div style={{ background: th.surface, borderRadius: 12, padding: '16px 18px', marginBottom: 12, border: `1px solid ${th.border}` }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: th.accent, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>
-              Step 2 · Keywords
-            </div>
-            <div style={{ fontSize: 12, color: th.muted, marginBottom: 12 }}>Customer এই শব্দগুলো লিখলে bot এই question match করবে — Bangla + English দুটোই রাখুন</div>
-
-            {/* Keyword chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6, marginBottom: 10, minHeight: 32 }}>
-              {editQ.keywords.map((k, i) => (
-                <span key={i} style={{ background: th.accentSoft, color: th.accent, fontSize: 12, padding: '4px 10px', borderRadius: 20, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5, border: `1px solid ${th.accent}40` }}>
-                  {k}
-                  <button onClick={() => setEditQ(q => ({ ...q!, keywords: q!.keywords.filter((_, j) => j !== i) }))}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: th.accent, fontSize: 13, lineHeight: '1', padding: 0, opacity: 0.7 }}>×</button>
-                </span>
-              ))}
-              {editQ.keywords.length === 0 && <span style={{ fontSize: 12, color: th.muted, fontStyle: 'italic' }}>কোনো keyword নেই — নিচে add করুন</span>}
-            </div>
-
-            {/* Add keyword input */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input style={{ ...th.input, flex: 1 }}
-                placeholder="keyword লিখুন, তারপর Enter বা Add চাপুন — যেমন: delivery time, কবে পাব, koto din"
-                value={kwInput}
-                onChange={e => setKwInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' || e.key === ',') {
-                    e.preventDefault();
-                    const val = kwInput.trim();
-                    if (val && !editQ.keywords.includes(val)) {
-                      setEditQ(q => ({ ...q!, keywords: [...q!.keywords, val] }));
-                      setKwInput('');
-                    }
-                  }
-                }} />
-              <button style={th.btnGhost} onClick={() => {
-                const val = kwInput.trim();
-                if (val && !editQ.keywords.includes(val)) {
-                  setEditQ(q => ({ ...q!, keywords: [...q!.keywords, val] }));
-                  setKwInput('');
-                }
-              }}>+ Add</button>
-            </div>
-            <div style={{ fontSize: 10.5, color: th.muted, marginTop: 6 }}>Enter চেপে বা "+" বাটন দিয়ে keyword add করুন · Chip-এ × চাপলে সরে যাবে</div>
-          </div>
-
-          {/* Step 3 */}
-          <div style={{ background: th.surface, borderRadius: 12, padding: '16px 18px', marginBottom: 16, border: `1px solid ${th.border}` }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: th.accent, textTransform: 'uppercase' as const, letterSpacing: '0.08em', marginBottom: 6 }}>
-              Step 3 · Bot Reply
-            </div>
-            <div style={{ fontSize: 12, color: th.muted, marginBottom: 10 }}>Customer এই question করলে bot কী reply করবে</div>
-
-            <textarea style={{ ...th.input, height: 90, resize: 'vertical' as const, fontFamily: 'inherit', fontSize: 13 }}
-              placeholder="আমাদের ডেলিভারি সময় ঢাকায় {{deliveryTime}} দিন এবং ঢাকার বাইরে {{deliveryTime}} দিন 🚚"
-              value={editQ.replyTemplate}
-              onChange={e => setEditQ(q => ({ ...q!, replyTemplate: e.target.value }))} />
-
-            {/* Variable chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 5, marginTop: 8 }}>
-              <span style={{ fontSize: 10.5, color: th.muted, alignSelf: 'center', fontWeight: 700 }}>Variables:</span>
-              {VARIABLES_HELP.split(' ').map(v => (
-                <code key={v}
-                  onClick={() => setEditQ(q => ({ ...q!, replyTemplate: (q?.replyTemplate || '') + v }))}
-                  style={{ background: th.accentSoft, color: th.accent, padding: '2px 8px', borderRadius: 6, fontSize: 10.5, cursor: 'pointer', border: `1px solid ${th.accent}30` }}>
-                  {v}
-                </code>
-              ))}
-              <span style={{ fontSize: 10, color: th.muted, alignSelf: 'center' }}>← click করলে insert হবে</span>
-            </div>
-          </div>
-
-          {/* Save/Cancel */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button style={{ ...th.btnPrimary, padding: '10px 24px', fontSize: 14 }} onClick={saveEditQ} disabled={saving || !editQ.label.trim()}>
-              {saving ? <><Spinner size={13}/> Saving…</> : '💾 Save Question'}
-            </button>
-            <button style={th.btnGhost} onClick={() => setEditQ(null)}>✕ Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {/* Question list */}
-      <div style={th.card}>
-        <CardHeader th={th} title="💬 Question Bank"
-          sub={`${cfg.questions.length} টি question — bot এগুলো দিয়ে customer এর প্রশ্ন বোঝে`}
-          action={
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button style={th.btnGhost} onClick={loadConfig}>🔄</button>
-              <button style={th.btnPrimary} onClick={newQuestion}>➕ New Question</button>
-            </div>
-          }
-        />
-
-        {cfg.questions.length === 0
-          ? <EmptyState icon="💬" title="কোনো question নেই" sub="নিচে global bank থেকে import করুন বা নতুন তৈরি করুন" />
-          : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {cfg.questions.map(q => (
-                <div key={q.key} style={{
-                  border: `1.5px solid ${!q.enabled ? th.border : editQ?.key === q.key ? th.accent : th.border}`,
-                  borderRadius: 12, padding: '12px 14px',
-                  background: !q.enabled ? (th.panel) : th.panel,
-                  opacity: q.enabled ? 1 : 0.5, transition: 'all .15s',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {/* Label + badges */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 800, fontSize: 13.5 }}>{q.label || q.key}</span>
-                        <InfoButton text={q.helpText || q.realMeaning} th={th} />
-                        <span style={{ ...th.pill, ...th.pillBlue, fontSize: 10 }}>{q.replyType}</span>
-                        {q.source === 'global'           && <span style={{ ...th.pill, ...th.pillGray,  fontSize: 10 }}>🌐 global</span>}
-                        {q.source === 'client_override'  && <span style={{ ...th.pill, ...th.pillGreen, fontSize: 10 }}>✏️ custom</span>}
-                        {q.source === 'client_import'    && <span style={{ ...th.pill, ...th.pillYellow,fontSize: 10 }}>⬇️ imported</span>}
-                      </div>
-
-                      {/* Real meaning */}
-                      <div style={{ fontSize: 11.5, color: th.muted, marginBottom: 6 }}>{q.realMeaning}</div>
-
-                      {/* Keywords */}
-                      {(() => {
-                        const exp = expandedKw.has(q.key);
-                        const shown = exp ? q.keywords : q.keywords.slice(0, 5);
-                        const hasMore = q.keywords.length > 5;
-                        return (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                            {shown.map(k => (
-                              <span key={k} style={{ background: th.accentSoft, color: th.accent, fontSize: 10.5, padding: '2px 8px', borderRadius: 6, fontWeight: 600 }}>{k}</span>
-                            ))}
-                            {hasMore && (
-                              <button
-                                onClick={() => setExpandedKw(prev => { const next = new Set(prev); exp ? next.delete(q.key) : next.add(q.key); return next; })}
-                                style={{ background: 'none', border: 'none', color: th.accent, fontSize: 10.5, cursor: 'pointer', padding: '1px 4px', textDecoration: 'underline' }}
-                              >
-                                {exp ? '▲ কম দেখাও' : `+${q.keywords.length - 5} আরো দেখাও`}
-                              </button>
-                            )}
-                            {q.keywords.length === 0 && <span style={{ fontSize: 11, color: th.muted }}>⚠️ কোনো keyword নেই</span>}
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Actions */}
-                    <div style={{ display: 'flex', gap: 5, flexShrink: 0, alignItems: 'center' }}>
-                      <button
-                        style={{ ...th.btnSm, ...(q.enabled ? th.btnSmSuccess : th.btnSmDanger), fontSize: 11, minWidth: 44 }}
-                        onClick={() => toggleQ(q)}>
-                        {q.enabled ? 'ON' : 'OFF'}
-                      </button>
-                      <button style={{ ...th.btnSmGhost, fontSize: 12 }} onClick={() => { setKwInput(''); setEditQ({ ...q }); }}>✏️</button>
-                      <button style={{ ...th.btnSmDanger, fontSize: 12 }} onClick={() => deleteQ(q.key)}>✕</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-      </div>
-
-      {/* Global suggestions */}
-      {cfg.globalSuggestions.length > 0 && (
-        <div style={th.card}>
-          <CardHeader th={th} title="🌐 Global Bank থেকে Import করুন"
-            sub="এগুলো এখনো আপনার page এ যোগ করা হয়নি" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {cfg.globalSuggestions.map(s => {
-              const expanded = expandedKw.has(s.key);
-              const shown = expanded ? s.keywords : s.keywords.slice(0, 5);
-              const hasMore = s.keywords.length > 5;
-              return (
-                <div key={s.key} style={{ ...th.card2, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                      <span style={{ fontWeight: 700, fontSize: 13 }}>{s.label}</span>
-                      <InfoButton text={s.helpText || s.realMeaning} th={th} />
-                    </div>
-                    <div style={{ fontSize: 11.5, color: th.muted, marginBottom: 4 }}>{s.realMeaning}</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                      {shown.map(k => (
-                        <span key={k} style={{ background: th.accentSoft, color: th.accent, fontSize: 10.5, padding: '1px 7px', borderRadius: 5 }}>{k}</span>
-                      ))}
-                      {hasMore && (
-                        <button
-                          onClick={() => setExpandedKw(prev => {
-                            const next = new Set(prev);
-                            expanded ? next.delete(s.key) : next.add(s.key);
-                            return next;
-                          })}
-                          style={{ background: 'none', border: 'none', color: th.accent, fontSize: 10.5, cursor: 'pointer', padding: '1px 4px', textDecoration: 'underline' }}
-                        >
-                          {expanded ? '▲ কম দেখাও' : `+${s.keywords.length - 5} আরো দেখাও`}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <button style={{ ...th.btnSmAccent, whiteSpace: 'nowrap' }} onClick={() => importGlobal(s.key)}>
-                    ⬇️ Import
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
 
   // ── SYSTEM REPLIES TAB ────────────────────────────────────────────────────
   const SystemRepliesTab = () => (
@@ -501,274 +160,6 @@ export function BotKnowledgePage({ th, pageId, onToast }: {
     </div>
   );
 
-  // ── LEARNING LOG TAB ──────────────────────────────────────────────────────
-  const openLogEntry = (l: LearningLog) => {
-    setActiveLogId(l.id);
-    setSelectedKws(l.suggestedKeywords.slice());
-    setLogAction('add_to_existing');
-    setLogTargetQ(cfg?.questions?.[0]?.key || '');
-    setLogNewLabel('');
-    setLogNewReply('');
-    setLogNewTarget('client');
-  };
-
-  const dismissLog = async (id: string) => {
-    await request(`${BASE}/learning-log/${id}`, { method: 'DELETE' });
-    setLog(prev => prev.filter(l => l.id !== id));
-    if (activeLogId === id) setActiveLogId(null);
-  };
-
-  const submitLogAction = async (l: LearningLog) => {
-    if (logAction === 'create_new' && !logNewLabel.trim()) {
-      onToast('Category name দিন', 'error'); return;
-    }
-    setLogSaving(true);
-    try {
-      await request(`${BASE}/learning-log/${l.id}/assign`, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: logAction,
-          keywords: selectedKws,
-          questionKey: logTargetQ,
-          label: logNewLabel,
-          replyTemplate: logNewReply,
-          target: logNewTarget,
-        }),
-      });
-      onToast('✅ সফলভাবে add করা হয়েছে');
-      setLog(prev => prev.filter(e => e.id !== l.id));
-      setActiveLogId(null);
-      await loadConfig();
-    } catch (e: any) { onToast(e.message, 'error'); }
-    finally { setLogSaving(false); }
-  };
-
-  const LearningTab = () => {
-    const activeEntry = log.find(l => l.id === activeLogId);
-    return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-      {/* Left: list */}
-      <div style={{ flex: '1 1 340px', minWidth: 0 }}>
-        <div style={th.card}>
-          <CardHeader th={th} title="🧠 Learning Log"
-            sub={`${log.length} টি unmatched message`}
-            action={<button style={th.btnGhost} onClick={loadLog}>🔄</button>}
-          />
-          {log.length === 0
-            ? <EmptyState icon="🎉" title="কোনো unmatched message নেই" sub="Bot সব question বুঝতে পারছে!" />
-            : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {log.slice(0, 80).map(l => (
-                  <div key={l.id}
-                    onClick={() => openLogEntry(l)}
-                    style={{
-                      ...th.card2, borderRadius: 10, cursor: 'pointer',
-                      border: activeLogId === l.id ? `2px solid ${th.accent}` : `2px solid transparent`,
-                      transition: 'border-color 0.15s',
-                    }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3, wordBreak: 'break-word' }}>
-                          "{l.message}"
-                        </div>
-                        <div style={{ fontSize: 11, color: th.muted, marginBottom: 4 }}>
-                          {new Date(l.createdAt).toLocaleString('bn-BD')} &nbsp;·&nbsp;
-                          <b>{l.bestGuess?.label || 'কিছু মেলেনি'}</b>
-                        </div>
-                        {l.customer && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                            <span style={{ fontSize: 10.5, background: th.surface, border: `1px solid ${th.border}`, borderRadius: 5, padding: '1px 7px', color: th.text, display: 'flex', alignItems: 'center', gap: 4 }}>
-                              👤 {l.customer.name || 'Unknown'}
-                              {l.customer.phone && <span style={{ color: th.muted }}>· {l.customer.phone}</span>}
-                            </span>
-                            <button
-                              onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(l.customer!.psid); onToast('PSID copied!'); }}
-                              style={{ ...th.btnGhost, padding: '1px 7px', fontSize: 10, flexShrink: 0 }}
-                              title="Messenger PSID copy করুন"
-                            >📋 PSID</button>
-                            {l.customer.phone && (
-                              <button
-                                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(l.customer!.phone!); onToast('Phone copied!'); }}
-                                style={{ ...th.btnGhost, padding: '1px 7px', fontSize: 10, flexShrink: 0 }}
-                                title="Phone copy করুন"
-                              >📋 Phone</button>
-                            )}
-                          </div>
-                        )}
-                        {l.suggestedKeywords.length > 0 && (
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {l.suggestedKeywords.map(k => (
-                              <span key={k} style={{ background: th.accentSoft, color: th.accent, fontSize: 10, padding: '1px 7px', borderRadius: 5 }}>{k}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={e => { e.stopPropagation(); openLogEntry(l); }}
-                        style={{ ...th.btnGhost, padding: '2px 7px', fontSize: 13, flexShrink: 0, color: th.accent, borderColor: th.accent }}
-                        title="Question Bank এ add করুন"
-                      >＋</button>
-                      <button
-                        onClick={e => { e.stopPropagation(); dismissLog(l.id); }}
-                        style={{ ...th.btnGhost, padding: '2px 7px', fontSize: 11, flexShrink: 0, opacity: 0.6 }}
-                        title="Order Info — dismiss করুন"
-                      >📦</button>
-                      <button
-                        onClick={e => { e.stopPropagation(); dismissLog(l.id); }}
-                        style={{ ...th.btnGhost, padding: '2px 7px', fontSize: 11, flexShrink: 0 }}
-                        title="Dismiss"
-                      >✕</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-        </div>
-      </div>
-
-      {/* Right: action panel */}
-      {activeEntry && (
-        <div style={{ flex: '1 1 360px', minWidth: 0, ...th.card }}>
-          <CardHeader th={th} title="⚡ Action" sub={`"${activeEntry.message}"`} />
-
-          {/* Keyword selector */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, color: th.muted, fontWeight: 600, marginBottom: 6 }}>Keywords select করুন:</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {activeEntry.suggestedKeywords.map(k => {
-                const on = selectedKws.includes(k);
-                return (
-                  <button key={k}
-                    onClick={() => setSelectedKws(prev => on ? prev.filter(x => x !== k) : [...prev, k])}
-                    style={{
-                      background: on ? th.accent : th.accentSoft,
-                      color: on ? '#fff' : th.accent,
-                      border: 'none', borderRadius: 6, fontSize: 11.5,
-                      padding: '3px 10px', cursor: 'pointer', fontWeight: 600,
-                    }}>{k}</button>
-                );
-              })}
-            </div>
-            {/* custom keyword input */}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <input
-                placeholder="নিজে keyword লিখুন..."
-                style={{ ...th.input, flex: 1, fontSize: 12 }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    const v = (e.target as HTMLInputElement).value.trim().toLowerCase();
-                    if (v && !selectedKws.includes(v)) setSelectedKws(prev => [...prev, v]);
-                    (e.target as HTMLInputElement).value = '';
-                  }
-                }}
-              />
-            </div>
-            {selectedKws.length > 0 && (
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
-                {selectedKws.map(k => (
-                  <span key={k} style={{ background: th.accent, color: '#fff', fontSize: 10.5, padding: '2px 8px', borderRadius: 5, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {k}
-                    <span style={{ cursor: 'pointer', opacity: 0.7 }} onClick={() => setSelectedKws(prev => prev.filter(x => x !== k))}>✕</span>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Action choice */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            {(['add_to_existing', 'create_new'] as const).map(a => (
-              <button key={a}
-                onClick={() => setLogAction(a)}
-                style={{
-                  ...th.btnGhost, flex: 1, fontSize: 12,
-                  background: logAction === a ? th.accent : undefined,
-                  color: logAction === a ? '#fff' : undefined,
-                  borderColor: logAction === a ? th.accent : undefined,
-                }}>
-                {a === 'add_to_existing' ? '➕ Existing Question এ add' : '🆕 New Category তৈরি'}
-              </button>
-            ))}
-          </div>
-
-          {/* Add to existing */}
-          {logAction === 'add_to_existing' && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 12, color: th.muted, fontWeight: 600, marginBottom: 6 }}>কোন question এ add করবেন?</div>
-              <select
-                value={logTargetQ}
-                onChange={e => setLogTargetQ(e.target.value)}
-                style={{ ...th.input, width: '100%', fontSize: 13 }}
-              >
-                {(cfg?.questions || []).map(q => (
-                  <option key={q.key} value={q.key}>{q.label}</option>
-                ))}
-              </select>
-              {logTargetQ && cfg && (
-                <div style={{ marginTop: 6, fontSize: 11, color: th.muted }}>
-                  Current keywords: {cfg.questions.find(q => q.key === logTargetQ)?.keywords.join(', ') || 'none'}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Create new */}
-          {logAction === 'create_new' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-              <div>
-                <div style={{ fontSize: 12, color: th.muted, fontWeight: 600, marginBottom: 4 }}>Category নাম *</div>
-                <input value={logNewLabel} onChange={e => setLogNewLabel(e.target.value)}
-                  placeholder="যেমন: Price জিজ্ঞেস করছে"
-                  style={{ ...th.input, width: '100%', fontSize: 13 }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: th.muted, fontWeight: 600, marginBottom: 4 }}>Bot reply (optional)</div>
-                <textarea value={logNewReply} onChange={e => setLogNewReply(e.target.value)}
-                  placeholder="Bot কী reply করবে..."
-                  rows={2}
-                  style={{ ...th.input, width: '100%', fontSize: 13, resize: 'vertical' }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: th.muted, fontWeight: 600, marginBottom: 4 }}>কোথায় add হবে?</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {(['client', 'global'] as const).map(t => (
-                    <button key={t}
-                      onClick={() => setLogNewTarget(t)}
-                      style={{
-                        ...th.btnGhost, flex: 1, fontSize: 12,
-                        background: logNewTarget === t ? th.accent : undefined,
-                        color: logNewTarget === t ? '#fff' : undefined,
-                      }}>
-                      {t === 'client' ? '👤 শুধু আমার Page' : '🌐 Global (সব page)'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Submit buttons */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              style={{ ...th.btnPrimary, flex: 1, fontSize: 13 }}
-              disabled={logSaving}
-              onClick={() => submitLogAction(activeEntry)}
-            >
-              {logSaving ? '...' : '✅ Save করুন'}
-            </button>
-            <button
-              style={{ ...th.btnGhost, fontSize: 13 }}
-              onClick={() => dismissLog(activeEntry.id)}
-            >
-              🗑️ Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-    );
-  };
-
   const saveAreaRules = async (areas: AreaRule[]) => {
     setSavingArea(true);
     try {
@@ -793,47 +184,6 @@ export function BotKnowledgePage({ th, pageId, onToast }: {
   };
 
   const removeArea = (i: number) => saveAreaRules(customAreas.filter((_, idx) => idx !== i));
-
-  const savePricingInfo = async () => {
-    setSavingPricing(true);
-    try {
-      await request(`${BASE}/pricing-info`, { method: 'PATCH', body: JSON.stringify({ pricingInfo }) });
-      onToast('Pricing info saved ✓', 'success');
-    } catch (e: any) { onToast(e.message, 'error'); }
-    finally { setSavingPricing(false); }
-  };
-
-  const PricingInfoTab = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ ...th.card2, background: th.accentSoft, border: `1px solid ${th.accent}40`, borderRadius: 12, padding: '12px 16px' }}>
-        <div style={{ fontWeight: 700, fontSize: 13, color: th.accent, marginBottom: 4 }}>💰 Pricing Info — Auto-Injected</div>
-        <div style={{ fontSize: 12, color: th.text, lineHeight: 1.7 }}>
-          এখানে যা লিখবেন, bot সেটা <b>automatically মনে রাখবে</b>।
-          Customer price জিজ্ঞেস করলে এই info থেকেই reply করবে।<br />
-          Price change করলে শুধু এখানে update করুন — bot এর পরের reply থেকেই নতুন price বলবে।
-        </div>
-      </div>
-      <div style={th.card}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Service Pricing Text</div>
-        <textarea
-          value={pricingInfo}
-          onChange={e => setPricingInfo(e.target.value)}
-          rows={14}
-          style={{ ...th.input, width: '100%', height: 280, resize: 'vertical' as const, fontFamily: 'monospace', fontSize: 13 }}
-          placeholder={`উদাহরণ:\n- Free trial: ১০০ AI reply/দিন\n- Paid: ৳০.১০/AI reply\n- Monthly base fee: ৳৬৯৯/মাস`}
-        />
-        <button
-          onClick={savePricingInfo}
-          disabled={savingPricing}
-          style={{
-            marginTop: 10, padding: '9px 20px', background: th.accent, color: '#fff',
-            border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13,
-            cursor: savingPricing ? 'not-allowed' : 'pointer', opacity: savingPricing ? 0.7 : 1,
-          }}
-        >{savingPricing ? 'Saving…' : 'Save Pricing Info'}</button>
-      </div>
-    </div>
-  );
 
   const AreaRulesTab = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -946,11 +296,8 @@ export function BotKnowledgePage({ th, pageId, onToast }: {
         </p>
       </div>
       <TabBar />
-      {tab === 'questions'      && <QuestionsTab />}
       {tab === 'system-replies' && <SystemRepliesTab />}
-      {tab === 'pricing-info'   && <PricingInfoTab />}
       {tab === 'area-rules'     && <AreaRulesTab />}
-      {tab === 'learning'       && <LearningTab />}
     </div>
   );
 }

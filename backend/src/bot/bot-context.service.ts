@@ -49,6 +49,7 @@ export interface BusinessContext {
   paymentRules: Record<string, any>;
   pricingPolicy: Record<string, any>;
   knowledgeText: string;
+  behaviorInstructions: string;
   pricingInfo: string;
   dualPhotoMode: boolean;
   dualWearingProduct: DualProduct | null;
@@ -83,6 +84,7 @@ export class BotContextService {
           deliveryTimeInsideDhaka: true,
           deliveryTimeOutsideDhaka: true,
           knowledgeText: true,
+          behaviorInstructions: true,
           customPersonaPrompt: true,
           dualPhotoMode: true,
           dualWearingProductId: true,
@@ -166,6 +168,7 @@ export class BotContextService {
       paymentRules: (knowledgeConfig as any)?.paymentRules ?? {},
       pricingPolicy: (knowledgeConfig as any)?.pricingPolicy ?? {},
       knowledgeText: (page as any)?.knowledgeText ?? '',
+      behaviorInstructions: (page as any)?.behaviorInstructions ?? '',
       pricingInfo: (knowledgeConfig as any)?.pricingInfo ?? '',
       agentType: (knowledgeConfig as any)?.agentType ?? 'commerce',
       customPersonaPrompt: (page as any)?.customPersonaPrompt ?? '',

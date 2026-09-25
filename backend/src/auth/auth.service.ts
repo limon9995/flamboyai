@@ -334,6 +334,43 @@ export class AuthService {
     return { success: true, message: 'Password reset successfully' };
   }
 
+  // ── Admin: impersonate (log in as) a client ───────────────────────────────
+  // Mints a real, short-lived session for the target user so the admin can
+  // enter that user's account and see everything exactly as they would.
+  // Admins can never be impersonated (no privilege escalation).
+  async adminImpersonate(targetUserId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role === 'admin')
+      throw new ForbiddenException('Cannot impersonate an admin account');
+
+    // Short-lived impersonation session (1 day) — separate from the user's
+    // own 30-day login sessions, so revoking it never touches the real user.
+    const now = new Date();
+    const expires = new Date(now.getTime() + 86_400_000);
+    const token = crypto.randomBytes(32).toString('hex');
+    await this.prisma.session.create({
+      data: {
+        id: crypto.randomUUID(),
+        token,
+        userId: user.id,
+        role: user.role,
+        expiresAt: expires,
+      },
+    });
+    this.logger.warn(
+      `[IMPERSONATE] admin logged in as user ${user.id} (${user.username})`,
+    );
+
+    return {
+      token,
+      expiresAt: expires.toISOString(),
+      user: await this.publicUser(user),
+    };
+  }
+
   // ── Admin: list users ─────────────────────────────────────────────────────
   async adminListUsers(): Promise<PublicUser[]> {
     const users = await this.prisma.user.findMany({

@@ -4,10 +4,21 @@ import type { Theme } from '../components/ui';
 import { API_BASE, useApi } from '../hooks/useApi';
 import { useLanguage } from '../i18n';
 import LocationPickerMap from '../components/LocationPickerMap';
+import { CourierBookingModal } from '../components/CourierBookingModal';
+import { OrderFieldsModal } from '../components/OrderFieldsModal';
 import { previewDeliveryFee } from '../utils/geo';
 import type { DeliverySlab } from '../utils/geo';
 
 interface OrderItem { productCode: string; qty: number; unitPrice: number; productName?: string | null; metaJson?: string | null; }
+
+/** [label, value] pairs captured for the page's order fields / variant fields */
+function customFieldEntries(json?: string | null): [string, string][] {
+  if (!json) return [];
+  try {
+    const obj = JSON.parse(json);
+    return obj && typeof obj === 'object' ? Object.entries(obj).map(([k, v]) => [k, String(v)]) : [];
+  } catch { return []; }
+}
 
 /** "5 pcs" from an item's metaJson ({variantLabel, pieces}) — '' when absent */
 function itemVariantLabel(i: OrderItem): string {
@@ -25,7 +36,8 @@ interface Order {
   deliveryLat?: number | null; deliveryLng?: number | null;
   deliveryFee?: number | null; deliveryDistanceKm?: number | null;
   items: OrderItem[];
-  courierShipment?: { status: string; courierName: string | null } | null;
+  courierShipment?: { status: string; courierName: string | null; trackingId?: string | null; trackingUrl?: string | null } | null;
+  customFieldsJson?: string | null;
   spamRisk?: string | null; spamScore?: number | null;
   spamTotalOrders?: number | null; spamDelivered?: number | null;
   spamCancelled?: number | null; spamSource?: string | null;
@@ -449,6 +461,8 @@ export function OrdersPage({ th, pageId, onToast, preset }: {
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating]     = useState(false);
   const [memoOrderId, setMemoOrderId] = useState<number | null>(null);
+  const [courierOrderId, setCourierOrderId] = useState<number | null>(null);
+  const [showOrderFields, setShowOrderFields] = useState(false);
   const [cancelModal, setCancelModal] = useState<{ ids: number[] } | null>(null);
   const [cancelNoteInput, setCancelNoteInput] = useState('');
   const [agentIssues, setAgentIssues] = useState<(Order & { botMuted: boolean; issueType?: string; customerPsid?: string })[]>([]);
@@ -833,6 +847,26 @@ export function OrdersPage({ th, pageId, onToast, preset }: {
   const subtotal    = (o: Order) => o.items.reduce((s, i) => s + i.unitPrice * i.qty, 0);
   const isPresetView = Boolean(preset?.label);
 
+  // 🚚 opens the Steadfast/Pathao booking dialog; green once a live parcel exists
+  const courierButton = (o: Order) => {
+    if (o.status === 'CANCELLED') return null;
+    const ship = o.courierShipment;
+    const booked = Boolean(ship?.trackingId && ship.courierName !== 'manual' && ship.status !== 'cancelled');
+    return (
+      <button
+        style={booked
+          ? { ...th.btnSmSuccess, fontSize: 11 }
+          : { ...th.btnSmGhost, fontSize: 11 }}
+        onClick={(e) => { e.stopPropagation(); setCourierOrderId(o.id); }}
+        title={booked
+          ? `${ship!.courierName} · ${ship!.trackingId}`
+          : copy('Steadfast / Pathao-তে পাঠান', 'Send to Steadfast / Pathao')}
+      >
+        🚚{booked ? ' ✓' : ''}
+      </button>
+    );
+  };
+
   const STATUS_COLORS: Record<string, string> = {
     ALL: th.accent, RECEIVED: '#b45309', CONFIRMED: '#16a34a', PACKED: '#7c3aed', DELIVERED: '#0891b2', CANCELLED: '#dc2626', ISSUE: '#ea580c',
   };
@@ -853,6 +887,11 @@ export function OrdersPage({ th, pageId, onToast, preset }: {
       {/* Modals */}
       {showCreate && <ManualOrderModal th={th} onClose={() => setShowCreate(false)} onSave={createManualOrder} saving={creating} restaurant={restoCfg} />}
       {memoOrderId && <MemoModal th={th} orderId={memoOrderId} pageId={pageId} onClose={() => setMemoOrderId(null)} onSaved={load} />}
+      {courierOrderId && (
+        <CourierBookingModal th={th} base={BASE} orderId={courierOrderId} onToast={onToast}
+          onClose={() => setCourierOrderId(null)} onBooked={() => { load(); loadDeliveryOrders(); }} />
+      )}
+      {showOrderFields && <OrderFieldsModal th={th} base={BASE} onToast={onToast} onClose={() => setShowOrderFields(false)} />}
       {cancelModal && (
         <div style={{ position: 'fixed', inset: 0, background: '#0008', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: th.surface, borderRadius: 14, padding: 24, width: 360, boxShadow: '0 8px 32px #0004' }}>
@@ -889,6 +928,12 @@ export function OrdersPage({ th, pageId, onToast, preset }: {
             <button style={{ ...th.btnPrimary, display: 'flex', alignItems: 'center', gap: 6 }}
               onClick={() => setShowCreate(true)}>
               ✏️ নতুন Order
+            </button>
+          )}
+          {!isPresetView && (
+            <button style={th.btnGhost} onClick={() => setShowOrderFields(true)}
+              title={copy('নিজের মতো order field যোগ করুন', 'Add your own order fields')}>
+              ⚙️ Order Fields
             </button>
           )}
           <button style={th.btnGhost} onClick={load}>
@@ -1501,6 +1546,7 @@ export function OrdersPage({ th, pageId, onToast, preset }: {
                     })()}
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button style={{ ...th.btnSmGhost, fontSize: 11 }} onClick={() => setMemoOrderId(o.id)}>📋</button>
+                      {courierButton(o)}
                       {canTriggerCall && <button style={th.btnSmAccent} onClick={() => callAction(o.id, 'send')}>📞</button>}
                       {!['CANCELLED', 'DELIVERED'].includes(o.status) && (
                         <div style={{ position: 'relative' }}>
@@ -1554,6 +1600,7 @@ export function OrdersPage({ th, pageId, onToast, preset }: {
                     {expanded === o.id && (
                       <div style={{ paddingTop: 8, borderTop: `1px solid ${th.border}`, fontSize: 12, color: th.muted, lineHeight: 1.8 }}>
                         <div>📍 {o.address || '—'}</div>
+                        {customFieldEntries(o.customFieldsJson).map(([k, v]) => <div key={k}>📌 {k}: <b style={{ color: th.text }}>{v}</b></div>)}
                         {o.orderNote && <div>📝 {o.orderNote}</div>}
                         {o.transactionId && <div>💳 TxnID: {o.transactionId}</div>}
                         {o.paymentStatus !== 'not_required' && <div><PaymentBadge paymentStatus={o.paymentStatus} /></div>}
@@ -1696,6 +1743,7 @@ export function OrdersPage({ th, pageId, onToast, preset }: {
                       <td style={th.td} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button style={{ ...th.btnSmGhost, fontSize: 11 }} onClick={() => setMemoOrderId(o.id)} title="Memo">📋</button>
+                          {courierButton(o)}
                           {canTriggerCall && (
                             <button
                               style={['CALL_FAILED', 'NOT_ANSWERED'].includes(o.callStatus) ? th.btnSmGhost : th.btnSmAccent}
@@ -1823,6 +1871,15 @@ export function OrdersPage({ th, pageId, onToast, preset }: {
                                 {o.callStatus === 'NOT_ANSWERED' && (
                                   <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: '#6b728012', border: '1px solid #6b72802a', fontSize: 12, color: th.muted }}>
                                     {copy('Customer call receive করেনি বা key press করেনি. Agent manually follow-up করুন.', 'The customer did not answer or did not press any key. Please follow up manually.')}
+                                  </div>
+                                )}
+                                {customFieldEntries(o.customFieldsJson).map(([k, v]) => (
+                                  <div key={k} style={{ marginTop: 4, fontSize: 12 }}>📌 {k}: <b style={{ color: th.text }}>{v}</b></div>
+                                ))}
+                                {o.courierShipment?.trackingId && (
+                                  <div style={{ marginTop: 4, fontSize: 12 }}>
+                                    🚚 {o.courierShipment.courierName} · {o.courierShipment.trackingId}
+                                    {o.courierShipment.trackingUrl && <> · <a href={o.courierShipment.trackingUrl} target="_blank" rel="noreferrer" style={{ color: th.accent }}>Track</a></>}
                                   </div>
                                 )}
                                 {o.transactionId && <div style={{ marginTop: 4, fontSize: 12, color: '#16a34a', fontWeight: 600 }}>💳 Txn: {o.transactionId}</div>}

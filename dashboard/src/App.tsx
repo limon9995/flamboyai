@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import { API_BASE, useApi } from './hooks/useApi';
 import { getTheme, useToast, safeLazy } from './components/ui';
 import { useLanguage } from './i18n';
+import { mountImpersonationBar } from './utils/impersonation';
 import { LoginPage } from './pages/LoginPage';
 import { SignupPageComponent } from './pages/SignupPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
@@ -128,6 +129,12 @@ export function AppContent() {
       replaceUrl(params);
     }
   }, []);
+
+  // Show the floating "Impersonate mode" pill whenever an admin is logged in
+  // as a client. Re-checked on every screen change so it survives navigation.
+  useEffect(() => {
+    mountImpersonationBar();
+  }, [screen, user]);
 
   useEffect(() => {
     if (screen === 'dashboard') return;

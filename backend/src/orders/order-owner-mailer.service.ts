@@ -66,4 +66,47 @@ export class OrderOwnerMailerService {
       );
     }
   }
+
+  /**
+   * Owner alert for an AI-flagged escalation (complaint/refund/etc. — see the
+   * ESCALATE action in smart-bot.service.ts). SECURITY: this method takes no
+   * email/destination parameter at all — the destination is always resolved
+   * here, fresh, from page.owner.email, exactly like sendNewOrderAlert above.
+   * `issueSummary` is the AI's reply text, used only as email BODY content —
+   * it can never become the destination, no matter what a client's custom
+   * prompt instructs the model to say.
+   */
+  async sendEscalationAlert(
+    pageId: number,
+    psid: string,
+    issueSummary: string,
+  ): Promise<void> {
+    try {
+      const page = await this.prisma.page.findUnique({
+        where: { id: pageId },
+        select: {
+          orderEmailNotifEnabled: true,
+          businessName: true,
+          owner: { select: { email: true } },
+        },
+      });
+      if (!page?.orderEmailNotifEnabled || !page.owner?.email) return;
+
+      await this.mailer
+        .sendMail(
+          page.owner.email,
+          `⚠️ Customer complaint/escalation${page.businessName ? ` — ${page.businessName}` : ''}`,
+          `<div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+            <h2 style="color:#dc2626">⚠️ Escalation — needs your attention</h2>
+            <p><b>Customer PSID:</b> ${psid}</p>
+            <p>${issueSummary}</p>
+          </div>`,
+        )
+        .catch(() => {});
+    } catch (e: any) {
+      this.logger.error(
+        `[OrderOwnerMailer] sendEscalationAlert failed pageId=${pageId} psid=${psid}: ${e.message}`,
+      );
+    }
+  }
 }

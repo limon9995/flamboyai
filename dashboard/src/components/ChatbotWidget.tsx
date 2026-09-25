@@ -168,9 +168,19 @@ type NavKey =
   | 'SETTINGS_BUSINESS' | 'SETTINGS_DELIVERY' | 'SETTINGS_BOT'
   | 'SETTINGS_KNOWLEDGE' | 'SETTINGS_CALL' | 'SETTINGS_VOICE' | 'SETTINGS_TELEGRAM';
 
+interface PendingAction {
+  type: string;
+  params: Record<string, any>;
+  title: string;
+  changes: { label: string; from: string; to: string }[];
+}
+
+type ActionState = 'pending' | 'running' | 'done' | 'cancelled' | 'error';
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  actions?: { action: PendingAction; state: ActionState; result?: string }[];
 }
 
 interface Props {
@@ -212,6 +222,8 @@ const PAGE_LABELS: Record<NavKey, string> = {
 
 // Cross-page suggestions always shown alongside page-specific ones
 const CROSS_PAGE_SUGGESTIONS: string[] = [
+  'আজকে কত টাকার sale হয়েছে?',
+  'কোন product-এর stock কম আছে?',
   'WhatsApp connect করব কীভাবে?',
   'Courier API কীভাবে setup করব?',
   'Bot কীভাবে automatically order নেয়?',
@@ -461,18 +473,23 @@ export function ChatbotWidget({ currentPage, dark, pageId }: Props) {
     setLoading(true);
 
     try {
-      const res = await request<{ reply: string }>(`${API_BASE}/support-chat`, {
+      const res = await request<{ reply: string; pendingActions?: PendingAction[] }>(`${API_BASE}/support-chat`, {
         method: 'POST',
         body: JSON.stringify({
           message: trimmed,
           pageContext: currentPage,
-          history: messages.slice(-10),
+          pageId,
+          history: messages.slice(-10).map(({ role, content }) => ({ role, content })),
           liveData: liveSummary ?? undefined,
         }),
       });
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: res.reply },
+        {
+          role: 'assistant',
+          content: res.reply,
+          actions: res.pendingActions?.map((action) => ({ action, state: 'pending' as ActionState })),
+        },
       ]);
     } catch {
       setMessages((prev) => [
@@ -485,6 +502,37 @@ export function ChatbotWidget({ currentPage, dark, pageId }: Props) {
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const setActionState = (msgIdx: number, actIdx: number, state: ActionState, result?: string) => {
+    setMessages((prev) =>
+      prev.map((m, i) =>
+        i !== msgIdx || !m.actions
+          ? m
+          : { ...m, actions: m.actions.map((a, j) => (j === actIdx ? { ...a, state, result } : a)) },
+      ),
+    );
+  };
+
+  /** Runs a change only after the user explicitly clicked Confirm on its card. */
+  const confirmAction = async (msgIdx: number, actIdx: number, action: PendingAction) => {
+    setActionState(msgIdx, actIdx, 'running');
+    try {
+      const res = await request<{ message: string }>(`${API_BASE}/support-chat/execute`, {
+        method: 'POST',
+        body: JSON.stringify({ pageId, action: { type: action.type, params: action.params } }),
+      });
+      setActionState(msgIdx, actIdx, 'done', res.message);
+    } catch (err: any) {
+      setActionState(msgIdx, actIdx, 'error', err?.message || 'পরিবর্তন করা যায়নি');
+    }
+  };
+
+  const confirmAll = async (msgIdx: number) => {
+    const acts = messages[msgIdx]?.actions ?? [];
+    for (let j = 0; j < acts.length; j++) {
+      if (acts[j].state === 'pending') await confirmAction(msgIdx, j, acts[j].action);
     }
   };
 
@@ -571,7 +619,7 @@ export function ChatbotWidget({ currentPage, dark, pageId }: Props) {
                 Liza ✨
               </div>
               <div style={{ fontSize: 11, color: '#22c55e', marginTop: 1, fontWeight: 600 }}>
-                ● অনলাইন · AI সহকারী{pageLabel ? ` · ${pageLabel}` : ''}
+                ● অনলাইন · AI ম্যানেজার{pageLabel ? ` · ${pageLabel}` : ''}
               </div>
             </div>
             <button
@@ -614,7 +662,7 @@ export function ChatbotWidget({ currentPage, dark, pageId }: Props) {
                 maxWidth: '88%',
               }}
             >
-              👋 হ্যালো! আমি <strong>Liza</strong> — FlamboyAI-এর AI সহকারী। Orders, Courier, Bot, WhatsApp, Payment — Dashboard-এর <strong>যেকোনো পেজের</strong> যেকোনো প্রশ্ন করুন!
+              👋 হ্যালো! আমি <strong>Liza</strong> — আপনার দোকানের AI ম্যানেজার। আপনার account-এর sale, order, stock, wallet দেখে উত্তর দিতে পারি, আর আপনি বললে <strong>product আপডেট, setting পরিবর্তন, order status</strong> বদলে দিতে পারি (আপনার Confirm নিয়ে)। যেকোনো প্রশ্নও করতে পারেন!
             </div>
 
             {/* Suggestions */}
@@ -677,6 +725,46 @@ export function ChatbotWidget({ currentPage, dark, pageId }: Props) {
                   }}
                 >
                   {m.content}
+                  {m.actions && m.actions.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, whiteSpace: 'normal' }}>
+                      {m.actions.map((a, j) => (
+                        <div key={j} style={{ background: bg, border: `1px solid ${a.state === 'done' ? '#22c55e' : a.state === 'error' ? '#ef4444' : border}`, borderRadius: 10, padding: '9px 10px' }}>
+                          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{a.action.title}</div>
+                          {a.action.changes.map((c, k) => (
+                            <div key={k} style={{ fontSize: 12, lineHeight: 1.5 }}>
+                              <span style={{ color: muted }}>{c.label}: </span>
+                              <span style={{ textDecoration: 'line-through', color: muted }}>{c.from}</span>
+                              {' → '}
+                              <strong>{c.to}</strong>
+                            </div>
+                          ))}
+                          {a.state === 'pending' && (
+                            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                              <button onClick={() => confirmAction(i, j, a.action)}
+                                style={{ flex: 1, background: accent, color: '#fff', border: 'none', borderRadius: 8, padding: '6px 0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                                ✓ Confirm
+                              </button>
+                              <button onClick={() => setActionState(i, j, 'cancelled')}
+                                style={{ flex: 1, background: 'none', color: muted, border: `1px solid ${border}`, borderRadius: 8, padding: '6px 0', fontSize: 12.5, cursor: 'pointer' }}>
+                                ✕ বাতিল
+                              </button>
+                            </div>
+                          )}
+                          {a.state === 'running' && <div style={{ fontSize: 12, color: muted, marginTop: 6 }}>⏳ পরিবর্তন হচ্ছে...</div>}
+                          {a.state === 'cancelled' && <div style={{ fontSize: 12, color: muted, marginTop: 6 }}>বাতিল করা হয়েছে</div>}
+                          {(a.state === 'done' || a.state === 'error') && (
+                            <div style={{ fontSize: 12, marginTop: 6, color: a.state === 'done' ? '#16a34a' : '#ef4444' }}>{a.result}</div>
+                          )}
+                        </div>
+                      ))}
+                      {m.actions.filter((a) => a.state === 'pending').length > 1 && (
+                        <button onClick={() => confirmAll(i)}
+                          style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+                          ✓ সবগুলো Confirm করুন
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -719,7 +807,7 @@ export function ChatbotWidget({ currentPage, dark, pageId }: Props) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="প্রশ্ন করুন..."
+              placeholder="প্রশ্ন বা কমান্ড দিন... (যেমন: DF-0001 এর দাম 950 করো)"
               rows={1}
               style={{
                 flex: 1,

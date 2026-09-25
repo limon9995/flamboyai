@@ -127,7 +127,9 @@ After any schema change in `backend/prisma/schema.prisma`:
 
 ## Production Deployment (VPS — all services)
 
-**Server:** `root@187.127.206.80` (Ubuntu). SSH key-based access is set up — connect with the alias `ssh flamboyai-vps` (defined in `~/.ssh/config` on the dev machine, `IdentityFile ~/.ssh/id_ed25519`). No password needed.
+**Server:** `root@187.127.214.75` (Kali GNU/Linux Rolling). SSH key-based access is set up — connect with the alias `ssh new-vps` (defined in `~/.ssh/config` on the dev machine, `IdentityFile ~/.ssh/id_ed25519`). No password needed.
+
+> As of 2026-08-14 this replaced the previous server (`187.127.206.80`, alias `flamboyai-vps`), which went unreachable during the migration and has not come back — real production data (users/pages/orders/wallet balances) was never migrated over as a result. The new server is running with a fresh/empty database until that old server can be reached again for a `pg_dump`. Below commands updated to the new host; swap `new-vps` back to `flamboyai-vps` only if working against the old box specifically.
 
 **IMPORTANT — deployment does NOT use git.** The local working copy's git remote (`github.com/limon9995/chatcatpro.git`) is not the trusted source of truth for this project, so `git pull` on the server is no longer the deploy method. Deploy by **rsyncing files directly from the local working copy to the VPS**, then building/restarting on the server. Always exclude `node_modules`, `dist`, `.env`, and any server-side data/log directories from the sync so you don't clobber production secrets or state.
 
@@ -143,29 +145,30 @@ api.flamboyai.com    →  Nginx reverse-proxies to PM2 (NestJS, port 3000)
 rsync -avz --delete \
   --exclude node_modules --exclude dist --exclude .env \
   --exclude storage --exclude logs --exclude "*.db" \
-  backend/ flamboyai-vps:/var/www/flamboyai/backend/
-ssh flamboyai-vps "cd /var/www/flamboyai/backend && npm ci && npx prisma generate && npx prisma migrate deploy && npm run build && pm2 reload flamboyai"
+  backend/ new-vps:/var/www/flamboyai/backend/
+ssh new-vps "cd /var/www/flamboyai/backend && npm ci && npx prisma generate && npx prisma db push --skip-generate && npm run build && pm2 reload flamboyai"
 ```
+> Use `prisma db push`, not `migrate deploy` — the migration history has a pre-existing bug (the first migration, `20260316101331_init`, contains leftover SQLite syntax that's invalid on Postgres), so `migrate deploy` fails from a clean state. `db push` builds directly from `schema.prisma` and is what was actually used to stand up the new server's DB.
 
 **Deploy dashboard:**
 ```bash
 rsync -avz --delete \
   --exclude node_modules --exclude dist --exclude .env \
-  dashboard/ flamboyai-vps:/var/www/flamboyai/dashboard/
-ssh flamboyai-vps "cd /var/www/flamboyai/dashboard && npm install && npm run build"   # output to dist/, Nginx serves it
+  dashboard/ new-vps:/var/www/flamboyai/dashboard/
+ssh new-vps "cd /var/www/flamboyai/dashboard && npm install && npm run build"   # output to dist/, Nginx serves it
 ```
 
 **Deploy landing page:**
 ```bash
-rsync -avz --delete landing/ flamboyai-vps:/var/www/flamboyai/landing/
+rsync -avz --delete landing/ new-vps:/var/www/flamboyai/landing/
 # No build step — static HTML, Nginx serves directly
 ```
 
 **Useful PM2 commands:**
 ```bash
-ssh flamboyai-vps pm2 status          # check all processes
-ssh flamboyai-vps pm2 logs flamboyai  # tail backend logs
-ssh flamboyai-vps pm2 reload flamboyai # zero-downtime restart
+ssh new-vps pm2 status          # check all processes
+ssh new-vps pm2 logs flamboyai  # tail backend logs
+ssh new-vps pm2 reload flamboyai # zero-downtime restart
 ```
 
 **Before any full deploy:** back up the current live directories on the server first (e.g. `cp -r /var/www/flamboyai/backend /var/www/flamboyai/backend.bak-$(date +%s)`) so a broken deploy can be rolled back quickly — especially since this working copy has had substantial uncommitted backend/dashboard changes that were never verified against production.

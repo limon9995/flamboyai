@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   ConversationContextService,
+  CustomFieldDef,
   DraftSession,
 } from '../conversation-context/conversation-context.service';
+import { queueAiOrderFields } from '../common/order-fields';
 import { BotContextService, BusinessContext } from './bot-context.service';
 import { BotKnowledgeService } from '../bot-knowledge/bot-knowledge.service';
 import { WalletService } from '../wallet/wallet.service';
@@ -13,6 +15,8 @@ import { estimateMonthlyCost, PricingCalcInput } from '../common/pricing-estimat
 import { MessengerService } from '../messenger/messenger.service';
 import { isInsideDhakaAddress } from '../webhook/handlers/dhaka-areas';
 import { AiUsageService } from '../common/ai-usage.service';
+import { ApiKeysService } from '../common/api-keys.service';
+import { OrderOwnerMailerService } from '../orders/order-owner-mailer.service';
 import {
   formatSlabsBn,
   parsePriceVariants,
@@ -49,6 +53,7 @@ export interface IDraftOrderHandler {
   ): Promise<number>;
   buildSummary(draft: DraftSession, page: any): string;
   buildAdvancePrompt(page: any, draft: DraftSession): string;
+  promptForCustomField(field: CustomFieldDef): string;
 }
 
 export interface SmartBotCollected {
@@ -62,7 +67,7 @@ export interface SmartBotCollected {
 
 export interface SmartBotResponse {
   reply: string;
-  action: 'CHAT' | 'COLLECT' | 'CONFIRM_ORDER' | 'CANCEL_ORDER' | 'AGENT' | 'CAPTURE_LEAD' | 'CONFIRM_LEAD' | 'SHOW_CATALOG';
+  action: 'CHAT' | 'COLLECT' | 'CONFIRM_ORDER' | 'CANCEL_ORDER' | 'AGENT' | 'ESCALATE' | 'CAPTURE_LEAD' | 'CONFIRM_LEAD' | 'SHOW_CATALOG' | 'SHOW_PRODUCT_IMAGE';
   collected: SmartBotCollected;
   calculatePricing: PricingCalcInput | null;
 }
@@ -75,10 +80,20 @@ export interface SmartBotCatalogResult {
   showCatalog: true;
 }
 
+// Returned by handle() when the AI (in Custom Prompt mode) decides to show
+// one specific product's image — distinct from SmartBotCatalogResult, which
+// sends the whole catalog. `imageUrl` is null if the product/code wasn't
+// found, so the webhook can fall back to a plain text reply.
+export interface SmartBotImageResult {
+  reply: string;
+  showProductImage: true;
+  imageUrl: string | null;
+}
+
 // Filled in by callGeminiWithKey/callOpenAIApi so the caller knows which
 // provider actually answered and what it cost (real tokens, not guesses).
 interface AiCallUsage {
-  provider?: 'gemini' | 'openai';
+  provider?: 'gemini' | 'openai' | 'openrouter';
   model?: string;
   promptTokens?: number;
   outputTokens?: number;
@@ -90,9 +105,11 @@ const VALID_ACTIONS = new Set([
   'CONFIRM_ORDER',
   'CANCEL_ORDER',
   'AGENT',
+  'ESCALATE',
   'CAPTURE_LEAD',
   'CONFIRM_LEAD',
   'SHOW_CATALOG',
+  'SHOW_PRODUCT_IMAGE',
 ]);
 
 @Injectable()
@@ -114,19 +131,21 @@ export class SmartBotService {
     private readonly geminiRotator: GeminiKeyRotatorService,
     private readonly messenger: MessengerService,
     private readonly aiUsage: AiUsageService,
+    private readonly apiKeys: ApiKeysService,
+    private readonly orderOwnerMailer: OrderOwnerMailerService,
   ) {
     this.openAiKey = process.env.OPENAI_API_KEY ?? '';
-    this.model = process.env.AI_INTENT_MODEL ?? 'gemini-2.5-flash-lite';
+    this.model = process.env.AI_INTENT_MODEL ?? 'gemini-3.5-flash-lite';
   }
 
   isAvailable(): boolean {
     // The 5-fail circuit breaker (cooldownUntil) exists to stop hammering a
     // provider that's currently broken. It must never block a healthy backup
-    // provider, though — if OpenAI is configured, Gemini having a rough patch
-    // (or being on cooldown) should still fall through to OpenAI per-message
+    // provider, though — if OpenAI/OpenRouter is configured, Gemini having a
+    // rough patch (or being on cooldown) should still fall through per-message
     // (see callOpenAI below), not silently degrade straight to keyword replies.
     const geminiUsable = this.geminiRotator.isAvailable() && Date.now() > this.cooldownUntil;
-    return geminiUsable || !!this.openAiKey;
+    return geminiUsable || !!this.openAiKey || !!this.apiKeys.getSync('openrouterApiKey');
   }
 
   /**
@@ -139,7 +158,7 @@ export class SmartBotService {
     text: string,
     draft: DraftSession | null,
     draftHandler: IDraftOrderHandler,
-  ): Promise<string | false | SmartBotCatalogResult> {
+  ): Promise<string | false | SmartBotCatalogResult | SmartBotImageResult> {
     const pageId = page.id as number;
 
     if (!this.isAvailable()) {
@@ -231,10 +250,7 @@ export class SmartBotService {
     ];
 
     const usage: AiCallUsage = {};
-    const raw = await this.callOpenAI(messages, usage);
-    if (!raw) return false;
-
-    const parsed = this.parseResponse(raw);
+    const parsed = await this.callOpenAI(messages, usage);
     if (!parsed) return false;
 
     this.failCount = 0;
@@ -300,7 +316,39 @@ export class SmartBotService {
           (!this.requiresAdvancePayment(d, page) || d.paymentProof);
 
         if (!canFinalize) {
-          // Fields still missing — AI reply already asks for them
+          // Don't trust the AI's own wording here — especially in Custom
+          // Prompt mode, the model can prematurely say "order confirmed!"
+          // before customerName/phone/address are actually collected (seen
+          // live: model declares success right after color+qty, backend
+          // silently drops it, customer is told "confirmed" with nothing
+          // saved). Deterministically ask for whatever is still missing so
+          // the customer is never told "confirmed" while nothing was saved.
+          const isBangla = /[ঀ-৿]/.test(text);
+          if (!d || d.items.length === 0) {
+            return isBangla
+              ? 'কোন প্রোডাক্টটা অর্ডার করতে চান, নাম/কোডটা বলবেন? 😊'
+              : "Which product would you like to order — could you tell me the name/code? 😊";
+          }
+          if (!d.customerName) {
+            return isBangla
+              ? 'অর্ডার কনফার্ম করতে আপনার নামটা জানাবেন?'
+              : "Could you share your name to confirm the order?";
+          }
+          if (!d.phone) {
+            return isBangla
+              ? 'আপনার ফোন নাম্বারটা দিন, প্লিজ।'
+              : 'Could you share your phone number, please?';
+          }
+          if (!d.address) {
+            return isBangla
+              ? 'ডেলিভারি এড্রেসটা (এলাকা/শহর) দিন, প্লিজ।'
+              : 'Could you share your delivery address (area/city), please?';
+          }
+          if (this.requiresAdvancePayment(d, page) && !d.paymentProof) {
+            return isBangla
+              ? 'অর্ডার কনফার্ম করতে আগে অ্যাডভান্স পেমেন্ট করে transaction ID/screenshot পাঠান, প্লিজ।'
+              : 'To confirm the order, please send the advance payment transaction ID/screenshot first.';
+          }
           return parsed.reply;
         }
         try {
@@ -326,6 +374,18 @@ export class SmartBotService {
 
       case 'AGENT': {
         await this.ctx.setAgentHandling(pageId, psid, true);
+        return parsed.reply;
+      }
+
+      case 'ESCALATE': {
+        // Custom Prompt mode: client's prompt decided this needs human
+        // attention (e.g. complaint/refund) — same agent handoff as AGENT,
+        // plus an owner email alert. Destination is never influenced by the
+        // model/prompt — sendEscalationAlert only ever resolves page.owner.email.
+        await this.ctx.setAgentHandling(pageId, psid, true);
+        void this.orderOwnerMailer
+          .sendEscalationAlert(pageId, psid, parsed.reply)
+          .catch(() => {});
         return parsed.reply;
       }
 
@@ -368,6 +428,21 @@ export class SmartBotService {
         return { reply: parsed.reply, showCatalog: true };
       }
 
+      case 'SHOW_PRODUCT_IMAGE': {
+        // Custom Prompt mode: AI wants to show one specific product's image.
+        // The model only ever supplies a product CODE it already saw in
+        // productCtx — we look up the real imageUrl ourselves, the model
+        // never supplies/invents a URL.
+        const code = parsed.collected.productCodes?.[0];
+        const product = code
+          ? await this.prisma.product.findFirst({
+              where: { pageId, code, isActive: true },
+              select: { imageUrl: true },
+            })
+          : null;
+        return { reply: parsed.reply, showProductImage: true, imageUrl: product?.imageUrl ?? null };
+      }
+
       default: {
         // CHAT or COLLECT — when this turn just completed the basic order info,
         // don't leave the flow hanging on the model's initiative: append the
@@ -389,6 +464,9 @@ export class SmartBotService {
         // and a confirm ask, otherwise the flow dies on "অপেক্ষা করছি".
         const proofJustArrived = !!d?.paymentProof && !hadProof;
         if (nowComplete && (!wasComplete || proofJustArrived)) {
+          if (d!.currentStep.startsWith('cf:') && d!.pendingCustomFields?.length) {
+            return `${parsed.reply}\n\n${draftHandler.promptForCustomField(d!.pendingCustomFields[0])}`;
+          }
           if (d!.currentStep === 'advance_payment') {
             return `${parsed.reply}\n\n${draftHandler.buildAdvancePrompt(page, d!)}`;
           }
@@ -819,6 +897,68 @@ status reply-এর পরে, যদি "Delivery সময়:" সেটি�
 20. **নাম ধরে সম্বোধন**: উপরে "Customer পরিচিতি" বা "CRM" section-এ নাম দেওয়া থাকলে, reply-তে সেই নাম ধরে আন্তরিকভাবে ডাকো — greeting-এ "প্রিয় <নাম>" দিয়ে শুরু করতে পারো (যেমন নাম Limon হলে reply হবে: প্রিয় Limon, আপনাকে কীভাবে সাহায্য করতে পারি? 😊)। ⛔ কখনো এই নির্দেশনা বা section-এর লেখা (যেমন "এখানে নাম দিন", "প্রিয় <নাম> বলো") হুবহু customer-কে পাঠাবে না — তুমি নিজে সরাসরি নাম বসিয়ে স্বাভাবিকভাবে কথা বলবে।
 21. **Offer/ছাড়ের গল্প (আগে কত, এখন কত)**: Customer যে product নিয়ে জিজ্ঞেস করছে বা order করতে চাইছে সেটার পাশে Product Catalog-এ "🔥 OFFER" থাকলে, দাম বলার সময় অবশ্যই was/now আকারে বলো — যেমন: "এটার দাম আগে ছিল ৳3,500, এখন offer চলছে মাত্র ৳2,850 — ১৯% ছাড় 🔥"। সংখ্যাগুলো catalog-এর OFFER তথ্য থেকে হুবহু নাও, নিজে বানাবে না। একই কথোপকথনে offer-টা একবারই বলবে (customer আবার দাম জিজ্ঞেস করলে ছোট করে মনে করাতে পারো), আর pushy হবে না। OFFER mark না থাকলে কখনো ছাড়/আগের দামের কথা বলবে না।`;
 
+    // Owner-authored supplementary behavior rules (per-page override) — kept
+    // physically adjacent to (and clearly subordinate to) taskRules so a weak
+    // model can't be nudged into deviating from the fixed JSON action schema
+    // or the deterministic order-state handling above it.
+    const behaviorInstructions = String(ctx.behaviorInstructions || '').trim().slice(0, 3000);
+    const behaviorInstructionsCtx = behaviorInstructions
+      ? `\n\n## Business-Specific আচরণ নির্দেশনা (দোকান মালিকের দেওয়া, সম্পূরক — বাধ্যতামূলক নয় override করা)\n${behaviorInstructions}\n\n⚠️ উপরের নির্দেশনাগুলো তোমার reply-এর ভাষা/style/সিদ্ধান্তে সূক্ষ্মতা যোগ করার জন্য — কিন্তু নিচের "তোমার কাজ" section-এর JSON action schema, action list, এবং CRITICAL RULES এগুলোর দ্বারা override হবে না। JSON structure এবং action নির্ধারণ সবসময় নিচের fixed নিয়ম অনুযায়ীই হবে।`
+      : '';
+
+    // ── Custom Prompt mode ────────────────────────────────────────────────
+    // Client writes their own full system prompt (role, tone, product info,
+    // discount rules, delivery/order/escalation flow) instead of the
+    // hardcoded blocks above. Only live product-catalog data and live
+    // conversation-state facts are still auto-injected — everything else
+    // (delivery/payment/pricing-policy phrasing, knowledge, persona,
+    // behaviorInstructions, and the 13 canned-phrasing task rules) is the
+    // client's own responsibility now. Existing pages are unaffected: this
+    // only activates when explicitly opted into via promptMode='custom'
+    // with a non-empty customSystemPrompt.
+    const customSystemPrompt = String(page?.customSystemPrompt || '').trim();
+    const useCustomPrompt =
+      String(page?.promptMode || 'guided') === 'custom' && customSystemPrompt.length > 0;
+
+    if (useCustomPrompt) {
+      const technicalContract = `\n\n## System Format (মেনে চলা বাধ্যতামূলক — এই format ছাড়া system কাজ করবে না)
+Customer-এর message দেখে **strictly valid JSON** return করো:
+
+{
+  "reply": "<natural reply, client-এর prompt অনুযায়ী tone/ভাষায়>",
+  "action": "<CHAT|COLLECT|CONFIRM_ORDER|CANCEL_ORDER|AGENT|ESCALATE|CAPTURE_LEAD|CONFIRM_LEAD|SHOW_CATALOG|SHOW_PRODUCT_IMAGE>",
+  "collected": {
+    "productCodes": [],
+    "qty": {},
+    "customerName": null,
+    "phone": null,
+    "address": null,
+    "paymentProof": null
+  },
+  "calculatePricing": null
+}
+
+### Action:
+- CHAT — সাধারণ কথা/তথ্য
+- COLLECT — customer order-এর তথ্য দিয়েছে (নাম/ফোন/ঠিকানা/color/qty)
+- CONFIRM_ORDER — customer order confirm করেছে
+- CANCEL_ORDER — customer order বাতিল করতে চায়
+- AGENT — human agent-এর দরকার, conversation চলতে থাকবে
+- ESCALATE — client-এর prompt অনুযায়ী escalation দরকার (যেমন complaint/refund) — এরপর conversation বন্ধ হয়ে যাবে, admin জানানো হবে
+- CAPTURE_LEAD — নাম + WhatsApp নম্বর collect করার দরকার
+- CONFIRM_LEAD — নাম ও WhatsApp দুটোই পাওয়া গেছে
+- SHOW_CATALOG — পুরো product list/catalog দেখানোর দরকার (card system পাঠাবে, reply-তে ছোট lead-in দাও)
+- SHOW_PRODUCT_IMAGE — একটা নির্দিষ্ট product-এর ছবি দেখানোর দরকার — "collected.productCodes"-এ ঠিক সেই product-এর code দাও (নিচের Product Catalog থেকে), ছবির URL নিজে বানাবে/লিখবে না, system পাঠাবে
+
+### বাধ্যতামূলক নিয়ম:
+1. collected-এ শুধু এই message-এ নতুন পাওয়া তথ্য রাখো, আগে ✅ হওয়া field আবার চাইবে না।
+2. reply ছোট রাখো, দরকার হলে বড়জোর ২-৩টা ছোট বার্তায় "|||" দিয়ে ভাগ করো (অন্য কোনো split marker না)।
+3. reply plain text — কখনো তুমি AI/bot তা বলবে না, system/tool-এর কথা বলবে না।`;
+
+      return `${customSystemPrompt}
+${productCtx}${customerCtx}${greetingCtx}${lastPresentedCtx}${draftCtx}${orderTrackCtx}${orderByIdCtx}${technicalContract}`;
+    }
+
     const customPersona = String(page?.customPersonaPrompt || '').trim();
     const intro = customPersona
       ? customPersona.replace(/\{\{\s*shop\s*\}\}/g, shop)
@@ -830,32 +970,84 @@ status reply-এর পরে, যদি "Delivery সময়:" সেটি�
       : DEFAULT_SMART_BOT_TONE_BLOCK;
 
     return `${intro}${toneBlock}
-${deliveryCtx}${paymentCtx}${productCtx}${pricingPolicyCtx}${knowledgeCtx}${pricingCtx}${catalogCtx}${customerCtx}${greetingCtx}${lastPresentedCtx}${draftCtx}${orderTrackCtx}${orderByIdCtx}${taskRules}`;
+${deliveryCtx}${paymentCtx}${productCtx}${pricingPolicyCtx}${knowledgeCtx}${pricingCtx}${catalogCtx}${customerCtx}${greetingCtx}${lastPresentedCtx}${draftCtx}${orderTrackCtx}${orderByIdCtx}${behaviorInstructionsCtx}${taskRules}`;
   }
 
+  // Admin-panel-configurable order in which providers are tried (Settings →
+  // API Keys → AI Provider Priority). Falls back to the historical
+  // Gemini → OpenAI → OpenRouter order when nothing is configured, and any
+  // provider missing from a saved (older/partial) list is appended at the end
+  // so a newly-added provider is never silently dropped.
+  private getProviderPriority(): Array<'gemini' | 'openai' | 'openrouter'> {
+    const DEFAULT: Array<'gemini' | 'openai' | 'openrouter'> = [
+      'gemini',
+      'openai',
+      'openrouter',
+    ];
+    const raw = this.apiKeys.getSync('aiProviderPriority');
+    if (!raw) return DEFAULT;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const valid = parsed.filter((p): p is 'gemini' | 'openai' | 'openrouter' =>
+          DEFAULT.includes(p),
+        );
+        const missing = DEFAULT.filter((p) => !valid.includes(p));
+        return [...valid, ...missing];
+      }
+    } catch {}
+    return DEFAULT;
+  }
+
+  // Returns the fully-validated response, not just raw text — a provider can
+  // return HTTP 200 with a real reply that still isn't valid JSON (a model
+  // just chatting in plain text instead of following the schema). That must
+  // count as a failure of THIS provider and fall through to the next one
+  // (e.g. OpenRouter), not silently end the whole turn — otherwise a
+  // healthy-but-noncompliant provider looks identical to "AI unavailable"
+  // from the customer's side.
   private async callOpenAI(
     messages: { role: string; content: string }[],
     usage: AiCallUsage = {},
-  ): Promise<string | null> {
-    // Try Gemini keys in rotation until one works or all exhausted
-    while (this.geminiRotator.isAvailable()) {
-      const key = this.geminiRotator.getKey();
-      if (!key) break;
-      const result = await this.callGeminiWithKey(key, messages, usage);
-      if (
-        result === 'QUOTA_EXCEEDED' ||
-        result === 'SERVER_ERROR' ||
-        result === 'DISABLED' ||
-        result === null
-      ) {
-        continue; // try next key
+  ): Promise<SmartBotResponse | null> {
+    for (const provider of this.getProviderPriority()) {
+      if (provider === 'gemini') {
+        // Try Gemini keys in rotation until one works or all exhausted. Only
+        // ONE malformed-JSON attempt per key — with a single key, retrying
+        // the SAME key on invalid output (no cooldown applies, since the API
+        // call itself succeeded) would spin forever, so move on to the next
+        // provider instead of looping again.
+        while (this.geminiRotator.isAvailable()) {
+          const key = this.geminiRotator.getKey();
+          if (!key) break;
+          const result = await this.callGeminiWithKey(key, messages, usage);
+          if (
+            result === 'QUOTA_EXCEEDED' ||
+            result === 'SERVER_ERROR' ||
+            result === 'DISABLED' ||
+            result === null
+          ) {
+            continue; // try next key
+          }
+          const parsed = this.parseResponse(result);
+          if (parsed) return parsed;
+          this.logger.warn('[SmartBot] Gemini returned non-JSON reply — trying next provider');
+          break; // don't hammer the same key forever on malformed output
+        }
+      } else if (provider === 'openai' && this.openAiKey) {
+        this.logger.warn('[SmartBot] Trying OpenAI');
+        const result = await this.callOpenAIApi(messages, usage);
+        const parsed = result ? this.parseResponse(result) : null;
+        if (parsed) return parsed;
+      } else if (provider === 'openrouter') {
+        const openRouterKey = this.apiKeys.getSync('openrouterApiKey');
+        if (openRouterKey) {
+          this.logger.warn('[SmartBot] Trying OpenRouter');
+          const result = await this.callOpenRouterApi(openRouterKey, messages, usage);
+          const parsed = result ? this.parseResponse(result) : null;
+          if (parsed) return parsed;
+        }
       }
-      return result;
-    }
-    // All Gemini keys exhausted — fall back to OpenAI
-    if (this.openAiKey) {
-      this.logger.warn('[SmartBot] All Gemini keys exhausted — falling back to OpenAI');
-      return this.callOpenAIApi(messages, usage);
     }
     this.enterCooldown();
     return null;
@@ -985,6 +1177,56 @@ ${deliveryCtx}${paymentCtx}${productCtx}${pricingPolicyCtx}${knowledgeCtx}${pric
     }
   }
 
+  private async callOpenRouterApi(
+    apiKey: string,
+    messages: { role: string; content: string }[],
+    usage: AiCallUsage = {},
+  ): Promise<string | null> {
+    try {
+      const model = this.apiKeys.getSync('openrouterModel') || 'openai/gpt-4o-mini';
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://flamboyai.com',
+          'X-Title': 'FlamboyAI',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.3,
+          max_tokens: 500,
+          response_format: { type: 'json_object' },
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (res.status === 429 || res.status === 402) {
+        this.logger.warn(`[SmartBot] OpenRouter quota/limit (${res.status})`);
+        return null;
+      }
+      if (!res.ok) {
+        const errText = await res.text();
+        this.logger.error(`[SmartBot] OpenRouter error ${res.status}: ${errText.slice(0, 200)}`);
+        this.recordFailure();
+        return null;
+      }
+
+      const data = await res.json();
+      this.logger.log('[SmartBot] OpenRouter fallback used successfully');
+      usage.provider = 'openrouter';
+      usage.model = model;
+      usage.promptTokens = data?.usage?.prompt_tokens ?? 0;
+      usage.outputTokens = data?.usage?.completion_tokens ?? 0;
+      return (data?.choices?.[0]?.message?.content ?? '').trim() || null;
+    } catch (err: any) {
+      this.logger.warn(`[SmartBot] OpenRouter network error: ${err?.message ?? err}`);
+      this.recordFailure();
+      return null;
+    }
+  }
+
   private parseResponse(raw: string): SmartBotResponse | null {
     try {
       const parsed = JSON.parse(raw);
@@ -994,7 +1236,7 @@ ${deliveryCtx}${paymentCtx}${productCtx}${pricingPolicyCtx}${knowledgeCtx}${pric
         .trim();
       if (!reply || !VALID_ACTIONS.has(action)) {
         this.logger.warn(
-          `[SmartBot] Invalid response: action="${action}" reply="${reply.slice(0, 60)}"`,
+          `[SmartBot] Invalid response: action="${action}" reply="${reply.slice(0, 60)}" raw="${raw.slice(0, 300)}"`,
         );
         return null;
       }
@@ -1110,7 +1352,13 @@ ${deliveryCtx}${paymentCtx}${productCtx}${pricingPolicyCtx}${knowledgeCtx}${pric
     if (!base.customerName) base.currentStep = 'name';
     else if (!base.phone) base.currentStep = 'phone';
     else if (!base.address) base.currentStep = 'address';
-    else if (this.requiresAdvancePayment(base, page) && !base.paymentProof)
+    // V29: AI-visible order fields — queued once; while a cf:* step is
+    // pending the webhook routes replies to the deterministic handler.
+    else if (base.currentStep?.startsWith('cf:') && base.pendingCustomFields?.length)
+      base.currentStep = `cf:${base.pendingCustomFields[0].label}`;
+    else if (queueAiOrderFields(base, page)) {
+      /* currentStep now points at the first order field */
+    } else if (this.requiresAdvancePayment(base, page) && !base.paymentProof)
       base.currentStep = 'advance_payment';
     else base.currentStep = 'confirm';
 

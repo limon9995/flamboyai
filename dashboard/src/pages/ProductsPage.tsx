@@ -65,6 +65,84 @@ const POLICY_OVERRIDE_DEFAULT: PolicyOverrideForm = {
   fixedPriceReplyText: '', negotiationReplyText: '',
 };
 
+/** One box for adding photos three ways: click to pick a file, Ctrl+V a copied image, or drag & drop. */
+function ImageDropZone({ th, copy, multiple, uploading, compact, label, onFiles }: {
+  th: Theme; copy: (bn: string, en: string) => string;
+  multiple?: boolean; uploading: boolean; compact?: boolean; label: string;
+  onFiles: (files: File[]) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [focused, setFocused] = useState(false);
+
+  const emit = (list: File[]) => {
+    const images = list.filter(f => f.type.startsWith('image/'));
+    if (!images.length) return;
+    onFiles(multiple ? images : images.slice(0, 1));
+  };
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const file = items[i].type.startsWith('image/') ? items[i].getAsFile() : null;
+      if (file) files.push(file);
+    }
+    if (!files.length) return;
+    e.preventDefault();
+    emit(files);
+  };
+
+  const active = dragOver || focused;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => !uploading && inputRef.current?.click()}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click(); } }}
+      onPaste={onPaste}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => { e.preventDefault(); setDragOver(false); emit(Array.from(e.dataTransfer.files || [])); }}
+      style={{
+        border: `1.5px dashed ${active ? th.accent : th.borderMd}`,
+        background: active ? `${th.accent}12` : th.surface,
+        borderRadius: 10,
+        padding: compact ? '8px 10px' : '14px 12px',
+        textAlign: 'center',
+        cursor: uploading ? 'wait' : 'pointer',
+        outline: 'none',
+        fontSize: compact ? 11.5 : 12.5,
+        color: th.muted,
+        transition: 'border-color .15s, background .15s',
+      }}
+    >
+      <div style={{ fontWeight: 700, color: active ? th.accent : th.text, marginBottom: 2 }}>
+        {uploading ? copy('Uploading...', 'Uploading...') : label}
+      </div>
+      {!uploading && (
+        <div>
+          {focused
+            ? copy('এখন Ctrl+V চাপুন ছবি paste করতে', 'Now press Ctrl+V to paste the image')
+            : copy('Click করে upload • ছবি copy করে এখানে click দিয়ে Ctrl+V • বা drag & drop', 'Click to upload • Click here then Ctrl+V to paste • or drag & drop')}
+        </div>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple={multiple}
+        style={{ display: 'none' }}
+        onClick={e => e.stopPropagation()}
+        onChange={e => { emit(Array.from(e.target.files || [])); e.target.value = ''; }}
+      />
+    </div>
+  );
+}
+
 /** Inline "Inherit from Page / Override" pricing-policy editor, reused across all 4 product forms. */
 function PricingPolicyOverrideField({ th, copy, value, onChange }: {
   th: Theme; copy: (bn: string, en: string) => string;
@@ -298,10 +376,6 @@ export function ProductsPage({ th, pageId, onToast }: {
   const [generatingDescEdit, setGeneratingDescEdit] = useState(false);
   const [extractingNew, setExtractingNew] = useState(false);
   const [extractingEdit, setExtractingEdit] = useState(false);
-  const newImageRef = useRef<HTMLInputElement>(null);
-  const newRefsRef = useRef<HTMLInputElement>(null);
-  const editImageRef = useRef<HTMLInputElement>(null);
-  const editRefsRef = useRef<HTMLInputElement>(null);
   const BASE = `${API_BASE}/client-dashboard/${pageId}`;
 
   // V22: Simple Products tab state
@@ -327,7 +401,6 @@ export function ProductsPage({ th, pageId, onToast }: {
   const [sessionUploading, setSessionUploading] = useState(false);
   const [sessionAnalyzing, setSessionAnalyzing] = useState<number | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
-  const newScreenshotRef = useRef<HTMLInputElement>(null);
 
   const loadLiveSessions = useCallback(async () => {
     const rows = await request<any[]>(`${BASE}/live-sessions`).catch(() => []);
@@ -454,17 +527,15 @@ export function ProductsPage({ th, pageId, onToast }: {
     return files;
   };
 
-  const handleMainImagePaste = async (e: React.ClipboardEvent, target: 'new' | 'edit') => {
-    const files = extractPastedImageFiles(e);
-    if (!files.length) return; // no image on clipboard — let normal text paste happen
-    e.preventDefault();
+  const uploadMainImageFiles = async (files: File[], target: 'new' | 'edit') => {
+    if (!files.length) return;
     const setUploading = target === 'new' ? setUploadingNewImage : setUploadingEditImage;
     setUploading(true);
     try {
       const url = await uploadProductFile(files[0]);
       if (target === 'new') setNewP(p => ({ ...p, imageUrl: url }));
       else setEditData(d => ({ ...d, imageUrl: url }));
-      onToast(copy('ছবি paste করে upload হয়েছে ✓', 'Image pasted & uploaded ✓'), 'success');
+      onToast(copy('Main ছবি upload হয়েছে ✓', 'Main image uploaded ✓'), 'success');
     } catch (err: any) {
       onToast(err.message, 'error');
     } finally {
@@ -472,22 +543,34 @@ export function ProductsPage({ th, pageId, onToast }: {
     }
   };
 
-  const handleRefImagesPaste = async (e: React.ClipboardEvent, target: 'new' | 'edit') => {
-    const files = extractPastedImageFiles(e);
+  const uploadRefImageFiles = async (files: File[], target: 'new' | 'edit') => {
     if (!files.length) return;
-    e.preventDefault();
     const setUploading = target === 'new' ? setUploadingNewRefs : setUploadingEditRefs;
     setUploading(true);
     try {
       const urls = await Promise.all(files.map(uploadProductFile));
       if (target === 'new') setNewP(p => addImagesPromotingFirst(p, urls));
       else setEditData(d => addImagesPromotingFirst(d, urls));
-      onToast(copy('ছবি paste করে upload হয়েছে ✓', 'Image pasted & uploaded ✓'), 'success');
+      onToast(copy('Angle ছবি upload হয়েছে ✓', 'Angle images uploaded ✓'), 'success');
     } catch (err: any) {
       onToast(err.message, 'error');
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleMainImagePaste = (e: React.ClipboardEvent, target: 'new' | 'edit') => {
+    const files = extractPastedImageFiles(e);
+    if (!files.length) return; // no image on clipboard — let normal text paste happen
+    e.preventDefault();
+    void uploadMainImageFiles(files, target);
+  };
+
+  const handleRefImagesPaste = (e: React.ClipboardEvent, target: 'new' | 'edit') => {
+    const files = extractPastedImageFiles(e);
+    if (!files.length) return;
+    e.preventDefault();
+    void uploadRefImageFiles(files, target);
   };
 
   /** Merges AI-analyze suggestions into a product form — never overwrites fields the user already filled in. */
@@ -855,35 +938,15 @@ export function ProductsPage({ th, pageId, onToast }: {
                 <input style={th.input} placeholder={copy('https://... (অথবা ছবি copy করে এখানে paste করুন)', 'https://... (or copy an image and paste here)')} value={newP.imageUrl}
                   onChange={e => setNewP(p => ({ ...p, imageUrl: e.target.value }))}
                   onPaste={e => handleMainImagePaste(e, 'new')} />
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" style={th.btnGhost} onClick={() => newImageRef.current?.click()} disabled={uploadingNewImage}>
-                    {uploadingNewImage ? copy('Uploading...', 'Uploading...') : copy('Upload Main Image', 'Upload Main Image')}
-                  </button>
-                  <button type="button" style={th.btnGhost} onClick={() => analyzeImage(newP.imageUrl || parseReferenceImages(newP.referenceImagesJson)[0] || '', 'new')} disabled={analyzingNew}>
-                    {analyzingNew ? copy('Analyzing...', 'Analyzing...') : copy('AI Analyze', 'AI Analyze')}
-                  </button>
-                </div>
-                <input
-                  ref={newImageRef}
-                  type="file"
-                  accept="image/*"
-                  style={{ display: 'none' }}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    setUploadingNewImage(true);
-                    try {
-                      const url = await uploadProductFile(file);
-                      setNewP((p) => ({ ...p, imageUrl: url }));
-                      onToast(copy('Main image uploaded', 'Main image uploaded'), 'success');
-                    } catch (err: any) {
-                      onToast(err.message, 'error');
-                    } finally {
-                      setUploadingNewImage(false);
-                      e.target.value = '';
-                    }
-                  }}
-                />
+                <ImageDropZone th={th} copy={copy} uploading={uploadingNewImage}
+                  label={copy('📷 Main Image', '📷 Main Image')}
+                  onFiles={files => uploadMainImageFiles(files, 'new')} />
+                {newP.imageUrl && (
+                  <img src={newP.imageUrl} alt="main" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 10, border: `1px solid ${th.border}` }} />
+                )}
+                <button type="button" style={th.btnGhost} onClick={() => analyzeImage(newP.imageUrl || parseReferenceImages(newP.referenceImagesJson)[0] || '', 'new')} disabled={analyzingNew}>
+                  {analyzingNew ? copy('Analyzing...', 'Analyzing...') : copy('AI Analyze', 'AI Analyze')}
+                </button>
               </div>
             </FieldWithInfo>
             <FieldWithInfo th={th} label="Video URL" helpText={copy('YouTube video link দিন, catalog-এ ভিডিও দেখাবে', 'Add a YouTube video link to show it in the catalog')}>
@@ -944,31 +1007,9 @@ export function ProductsPage({ th, pageId, onToast }: {
                   onChange={e => setNewP(p => ({ ...p, referenceImagesJson: e.target.value }))}
                   onPaste={e => handleRefImagesPaste(e, 'new')}
                 />
-                <button type="button" style={th.btnGhost} onClick={() => newRefsRef.current?.click()} disabled={uploadingNewRefs}>
-                  {uploadingNewRefs ? copy('Uploading...', 'Uploading...') : copy('Upload Angle Images', 'Upload Angle Images')}
-                </button>
-                <input
-                  ref={newRefsRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  style={{ display: 'none' }}
-                  onChange={async (e) => {
-                    const files = Array.from(e.target.files || []);
-                    if (!files.length) return;
-                    setUploadingNewRefs(true);
-                    try {
-                      const urls = await Promise.all(files.map(uploadProductFile));
-                      setNewP((p) => addImagesPromotingFirst(p, urls));
-                      onToast(copy('Angle images uploaded', 'Angle images uploaded'), 'success');
-                    } catch (err: any) {
-                      onToast(err.message, 'error');
-                    } finally {
-                      setUploadingNewRefs(false);
-                      e.target.value = '';
-                    }
-                  }}
-                />
+                <ImageDropZone th={th} copy={copy} multiple uploading={uploadingNewRefs}
+                  label={copy('🖼️ Angle Images (একাধিক)', '🖼️ Angle Images (multiple)')}
+                  onFiles={files => uploadRefImageFiles(files, 'new')} />
               </div>
             </FieldWithInfo>
             {parseReferenceImages(newP.referenceImagesJson).length > 0 && (
@@ -1233,35 +1274,12 @@ export function ProductsPage({ th, pageId, onToast }: {
                         <input style={{ ...th.input, fontSize: 12.5 }} placeholder={copy('Image URL (বা ছবি paste করুন)', 'Image URL (or paste an image)')} value={editData.imageUrl ?? ''}
                           onChange={e => setEditData(d => ({ ...d, imageUrl: e.target.value }))}
                           onPaste={e => handleMainImagePaste(e, 'edit')} />
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          <button type="button" style={th.btnSmGhost} onClick={() => editImageRef.current?.click()} disabled={uploadingEditImage}>
-                            {uploadingEditImage ? 'Uploading…' : 'Upload Main'}
-                          </button>
-                          <button type="button" style={th.btnSmGhost} onClick={() => analyzeImage(editData.imageUrl || parseReferenceImages(editData.referenceImagesJson)[0] || '', 'edit')} disabled={analyzingEdit}>
-                            {analyzingEdit ? 'Analyzing…' : 'AI Analyze'}
-                          </button>
-                        </div>
-                        <input
-                          ref={editImageRef}
-                          type="file"
-                          accept="image/*"
-                          style={{ display: 'none' }}
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            setUploadingEditImage(true);
-                            try {
-                              const url = await uploadProductFile(file);
-                              setEditData((d) => ({ ...d, imageUrl: url }));
-                              onToast(copy('Main image uploaded', 'Main image uploaded'), 'success');
-                            } catch (err: any) {
-                              onToast(err.message, 'error');
-                            } finally {
-                              setUploadingEditImage(false);
-                              e.target.value = '';
-                            }
-                          }}
-                        />
+                        <ImageDropZone th={th} copy={copy} compact uploading={uploadingEditImage}
+                          label={copy('📷 Main Image', '📷 Main Image')}
+                          onFiles={files => uploadMainImageFiles(files, 'edit')} />
+                        <button type="button" style={th.btnSmGhost} onClick={() => analyzeImage(editData.imageUrl || parseReferenceImages(editData.referenceImagesJson)[0] || '', 'edit')} disabled={analyzingEdit}>
+                          {analyzingEdit ? 'Analyzing…' : 'AI Analyze'}
+                        </button>
                         <textarea
                           style={{ ...th.input, fontSize: 12, minHeight: 82, resize: 'vertical' }}
                           placeholder={copy('Reference image URLs\nhttps://...\n(বা ছবি paste করুন)', 'Reference image URLs\nhttps://...\n(or paste image(s))')}
@@ -1269,31 +1287,9 @@ export function ProductsPage({ th, pageId, onToast }: {
                           onChange={e => setEditData(d => ({ ...d, referenceImagesJson: e.target.value }))}
                           onPaste={e => handleRefImagesPaste(e, 'edit')}
                         />
-                        <button type="button" style={th.btnSmGhost} onClick={() => editRefsRef.current?.click()} disabled={uploadingEditRefs}>
-                          {uploadingEditRefs ? 'Uploading…' : 'Upload Angles'}
-                        </button>
-                        <input
-                          ref={editRefsRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          style={{ display: 'none' }}
-                          onChange={async (e) => {
-                            const files = Array.from(e.target.files || []);
-                            if (!files.length) return;
-                            setUploadingEditRefs(true);
-                            try {
-                              const urls = await Promise.all(files.map(uploadProductFile));
-                              setEditData((d) => addImagesPromotingFirst(d, urls));
-                              onToast(copy('Angle images uploaded', 'Angle images uploaded'), 'success');
-                            } catch (err: any) {
-                              onToast(err.message, 'error');
-                            } finally {
-                              setUploadingEditRefs(false);
-                              e.target.value = '';
-                            }
-                          }}
-                        />
+                        <ImageDropZone th={th} copy={copy} compact multiple uploading={uploadingEditRefs}
+                          label={copy('🖼️ Angle Images', '🖼️ Angle Images')}
+                          onFiles={files => uploadRefImageFiles(files, 'edit')} />
                         {(editData.referenceImagesJson ?? '').trim() && (
                           <div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(56px,1fr))', gap: 6 }}>
@@ -1785,11 +1781,9 @@ export function ProductsPage({ th, pageId, onToast }: {
                     ))}
                   </div>
                 )}
-                <input ref={newScreenshotRef} type="file" accept="image/*" style={{ display: 'none' }}
-                  onChange={e => { const f = e.target.files?.[0]; if (f) { uploadNewScreenshot(f); e.target.value = ''; } }} />
-                <button style={{ ...th.btnGhost, fontSize: 12 }} disabled={sessionUploading} onClick={() => newScreenshotRef.current?.click()}>
-                  {sessionUploading ? <><Spinner size={12}/> Uploading...</> : `📷 Screenshot যোগ করুন${newSession.screenshots.length > 0 ? ` (${newSession.screenshots.length}টি)` : ''}`}
-                </button>
+                <ImageDropZone th={th} copy={copy} compact multiple uploading={sessionUploading}
+                  label={`📷 Screenshot যোগ করুন${newSession.screenshots.length > 0 ? ` (${newSession.screenshots.length}টি)` : ''}`}
+                  onFiles={async files => { for (const f of files) await uploadNewScreenshot(f); }} />
               </div>
 
               {/* Product pickers */}

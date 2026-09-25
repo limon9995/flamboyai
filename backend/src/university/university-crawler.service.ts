@@ -285,7 +285,7 @@ No departments or semesters — only course/subject names.
 
 Content:
 ${courseLines}`;
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`;
             const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 600, thinkingConfig: { thinkingBudget: 0 } } }),
               signal: AbortSignal.timeout(12_000),

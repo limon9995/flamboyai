@@ -152,8 +152,9 @@ export class FollowUpService {
         'আপনার Order #{{orderId}} ডেলিভারি হয়েছে ✅ ধন্যবাদ! 💖',
       abandonedCartEnabled: false,
       abandonedCartDelay: 2,
+      // {{name}} → customer's name, {{product}} → the product they were eyeing.
       abandonedCartMsg:
-        'আপনি product দেখছিলেন — order করতে চাইলে code টা পাঠান 💖',
+        '{{name}}, আপনি {{product}} নিয়ে ভাবছিলেন 😊 এখনো নিতে চাইলে বলুন — আমি অর্ডারটা রেডি করে দিই।',
       reviewRequestEnabled: false,
       reviewRequestDelay: 4,
       reviewRequestMsg:

@@ -182,6 +182,11 @@ model Page {
   deliveryTimeInsideDhaka   String?
   deliveryTimeOutsideDhaka  String?
 
+  // V29: merchant-defined extra order fields ("Edit Order Fields") — JSON array
+  // of {key,label,type,choices,helpText,optional,visibleToAi}. Fields with
+  // visibleToAi=true are asked by the bot after name/phone/address.
+  orderFieldsJson           String?
+
   // V17: Payment mode — controls how bot collects payment before confirming order
   // 'cod' = full cash on delivery (default)
   // 'advance_outside' = advance required for outside-Dhaka orders, COD inside
@@ -660,6 +665,10 @@ model Order {
   // V28: snapshot of the milestone reward granted on this order, if any —
   // {interval, rewardType, productId, productName, qty}. Null = none.
   milestoneRewardAppliedJson String?
+
+  // V29: values captured for the page's order fields + product variant fields,
+  // keyed by field label — {"Colour":"Red","Size":"M"}. Null = none.
+  customFieldsJson String?
 
   @@index([pageIdRef])
   @@index([customerPsid])

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CardHeader, EmptyState, FieldWithInfo, InfoButton, Spinner } from '../components/ui';
 import type { Theme } from '../components/ui';
 import { API_BASE, useApi } from '../hooks/useApi';
+import { startImpersonation } from '../utils/impersonation';
 
-type AdminTab = 'overview' | 'clients' | 'global-questions' | 'global-replies' | 'learning-log' | 'courier-tutorials' | 'billing' | 'call-servers' | 'wallet' | 'pricing' | 'subscriptions' | 'page-requests' | 'wa-requests' | 'customers' | 'domain-setup' | 'api-keys' | 'reports' | 'agents' | 'my-clients' | 'earnings';
+type AdminTab = 'overview' | 'users' | 'clients' | 'global-questions' | 'global-replies' | 'learning-log' | 'courier-tutorials' | 'billing' | 'call-servers' | 'wallet' | 'pricing' | 'subscriptions' | 'page-requests' | 'wa-requests' | 'customers' | 'domain-setup' | 'api-keys' | 'reports' | 'agents' | 'my-clients' | 'earnings';
 
 interface TutorialsConfig {
   courier?: { pathao?: string; steadfast?: string; redx?: string; paperfly?: string };
@@ -61,33 +62,54 @@ interface ClientPage {
   hasCustomApp?: boolean;
 }
 
-const ADMIN_TABS: { key: AdminTab; label: string; icon: string; help: string }[] = [
-  { key: 'overview',          label: 'Overview',          icon: '📊', help: 'System এর সার্বিক অবস্থা দেখুন' },
-  { key: 'page-requests',     label: 'Page Requests',     icon: '📋', help: 'Client দের page access request গুলো দেখুন এবং approve/reject করুন।' },
-  { key: 'wa-requests',       label: 'WhatsApp Requests', icon: '📲', help: 'Client দের WhatsApp automation request গুলো দেখুন এবং connect করুন।' },
-  { key: 'clients',           label: 'Clients',           icon: '👥', help: 'সব client এর list এবং তাদের bot knowledge পরিচালনা করুন' },
-  { key: 'global-questions',  label: 'Global Questions',  icon: '🌐', help: 'সব client এর জন্য default question bank।' },
-  { key: 'global-replies',    label: 'System Replies',    icon: '💬', help: 'সব page এর জন্য default bot reply template।' },
-  { key: 'learning-log',      label: 'Learning Log',      icon: '🧠', help: 'Bot যে messages বোঝেনি সেগুলো।' },
-  { key: 'courier-tutorials', label: 'Courier Tutorials', icon: '🚚', help: 'Client দের courier API setup এর জন্য tutorial video link রাখুন।' },
-  { key: 'call-servers',      label: 'Call Servers',      icon: '📞', help: 'Calling feature চালু/বন্ধ করুন এবং call servers manage করুন।' },
-  { key: 'billing',           label: 'Billing',           icon: '💳', help: 'Subscriptions, payments, plan management।' },
-  { key: 'wallet',            label: 'Wallet',            icon: '💰', help: 'সব client এর wallet balance দেখুন, recharge approve করুন।' },
-  { key: 'pricing',           label: 'Pricing',           icon: '🏷️', help: 'Global usage cost rates edit করুন এবং সব client এ একসাথে apply করুন।' },
-  { key: 'reports',           label: 'Reports',           icon: '📊', help: 'Revenue, API cost, profit — সব কিছুর full financial report।' },
-  { key: 'subscriptions',     label: 'Subscriptions',     icon: '📅', help: 'প্রতিটি page এর server subscription expiry set করুন। Expired হলে bot বন্ধ হয়ে যায়।' },
-  { key: 'domain-setup',      label: 'Custom Domains',    icon: '🌐', help: 'Customer-দের নিজের domain set করুন — Nginx config + SSL সব automatic হবে।' },
-  { key: 'api-keys',          label: 'API Keys',          icon: '🔑', help: 'সব third-party API key গুলো এখান থেকে manage করুন। .env ফাইল edit না করেও চলবে।' },
-  { key: 'agents',            label: 'Agents',            icon: '🤝', help: 'Reseller/Agent account তৈরি করুন, commission rate set করুন, payout record করুন।' },
+interface AdminUser {
+  id: string; username: string; name: string; email?: string | null;
+  isActive: boolean; createdAt?: string;
+  pageCount: number; credits: number; creditUsed: number;
+  pages?: ClientPage[];
+}
+
+// Sidebar groups — the admin tabs are organised into labelled sections so the
+// panel reads top-to-bottom instead of a flat wall of pills.
+type AdminTabDef = { key: AdminTab; label: string; icon: string; help: string; group: string };
+
+const ADMIN_TABS: AdminTabDef[] = [
+  // ── Overview ──
+  { key: 'overview',          label: 'Overview',          icon: '📊', group: 'Overview',      help: 'System এর সার্বিক অবস্থা দেখুন' },
+
+  // ── Clients & Access ──
+  { key: 'users',             label: 'Users',             icon: '👤', group: 'Clients & Access', help: 'সব user এর list — credits, businesses, status এবং impersonate।' },
+  { key: 'clients',           label: 'Business Profiles', icon: '🏢', group: 'Clients & Access', help: 'সব page/business এর list এবং তাদের bot knowledge পরিচালনা করুন' },
+  { key: 'page-requests',     label: 'Page Requests',     icon: '📋', group: 'Clients & Access', help: 'Client দের page access request গুলো দেখুন এবং approve/reject করুন।' },
+  { key: 'wa-requests',       label: 'WhatsApp Requests', icon: '📲', group: 'Clients & Access', help: 'Client দের WhatsApp automation request গুলো দেখুন এবং connect করুন।' },
+  { key: 'subscriptions',     label: 'Subscriptions',     icon: '📅', group: 'Clients & Access', help: 'প্রতিটি page এর server subscription expiry set করুন। Expired হলে bot বন্ধ হয়ে যায়।' },
+  { key: 'domain-setup',      label: 'Custom Domains',    icon: '🌐', group: 'Clients & Access', help: 'Customer-দের নিজের domain set করুন — Nginx config + SSL সব automatic হবে।' },
+
+  // ── Bot Knowledge ──
+  { key: 'global-questions',  label: 'Global Questions',  icon: '❓', group: 'Bot Knowledge',   help: 'সব client এর জন্য default question bank।' },
+  { key: 'global-replies',    label: 'System Replies',    icon: '💬', group: 'Bot Knowledge',   help: 'সব page এর জন্য default bot reply template।' },
+  { key: 'learning-log',      label: 'Learning Log',      icon: '🧠', group: 'Bot Knowledge',   help: 'Bot যে messages বোঝেনি সেগুলো।' },
+  { key: 'courier-tutorials', label: 'Courier Tutorials', icon: '🚚', group: 'Bot Knowledge',   help: 'Client দের courier API setup এর জন্য tutorial video link রাখুন।' },
+
+  // ── Finance ──
+  { key: 'billing',           label: 'Billing',           icon: '💳', group: 'Finance',         help: 'Subscriptions, payments, plan management।' },
+  { key: 'wallet',            label: 'Wallet',            icon: '💰', group: 'Finance',         help: 'সব client এর wallet balance দেখুন, recharge approve করুন।' },
+  { key: 'pricing',           label: 'Pricing',           icon: '🏷️', group: 'Finance',         help: 'Global usage cost rates edit করুন এবং সব client এ একসাথে apply করুন।' },
+  { key: 'reports',           label: 'Reports',           icon: '📈', group: 'Finance',         help: 'Revenue, API cost, profit — সব কিছুর full financial report।' },
+
+  // ── System ──
+  { key: 'call-servers',      label: 'Call Servers',      icon: '📞', group: 'System',          help: 'Calling feature চালু/বন্ধ করুন এবং call servers manage করুন।' },
+  { key: 'api-keys',          label: 'API Keys',          icon: '🔑', group: 'System',          help: 'সব third-party API key গুলো এখান থেকে manage করুন। .env ফাইল edit না করেও চলবে।' },
+  { key: 'agents',            label: 'Agents',            icon: '🤝', group: 'System',          help: 'Reseller/Agent account তৈরি করুন, commission rate set করুন, payout record করুন।' },
 ];
 
-const SECRET_TAB: { key: AdminTab; label: string; icon: string; help: string } =
-  { key: 'customers', label: 'Sys Log', icon: '🔒', help: '' };
+const SECRET_TAB: AdminTabDef =
+  { key: 'customers', label: 'Sys Log', icon: '🔒', group: 'System', help: '' };
 
 // Agent (reseller) role sees only these two tabs — never the full admin surface.
-const AGENT_TABS: { key: AdminTab; label: string; icon: string; help: string }[] = [
-  { key: 'my-clients', label: 'My Clients',  icon: '👥', help: 'আপনার referral link দিয়ে signup করা client এবং তাদের page গুলো।' },
-  { key: 'earnings',   label: 'Earnings',    icon: '💰', help: 'আপনার referral link, commission rate, owed balance এবং payout history।' },
+const AGENT_TABS: AdminTabDef[] = [
+  { key: 'my-clients', label: 'My Clients',  icon: '👥', group: 'Agent', help: 'আপনার referral link দিয়ে signup করা client এবং তাদের page গুলো।' },
+  { key: 'earnings',   label: 'Earnings',    icon: '💰', group: 'Agent', help: 'আপনার referral link, commission rate, owed balance এবং payout history।' },
 ];
 
 const REPLY_KEY_HELP: Record<string, string> = {
@@ -114,7 +136,7 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
     const saved = localStorage.getItem('admin_tab') as AdminTab | null;
     const valid: AdminTab[] = isAgent
       ? ['my-clients', 'earnings']
-      : ['overview','clients','customers','global-questions','global-replies','learning-log','courier-tutorials','billing','call-servers','wallet','pricing','subscriptions','page-requests','wa-requests','domain-setup','api-keys','reports','agents'];
+      : ['overview','users','clients','customers','global-questions','global-replies','learning-log','courier-tutorials','billing','call-servers','wallet','pricing','subscriptions','page-requests','wa-requests','domain-setup','api-keys','reports','agents'];
     return saved && valid.includes(saved) ? saved : (isAgent ? 'my-clients' : 'overview');
   });
   const [pageRequests, setPageRequests] = useState<any[]>([]);
@@ -124,6 +146,9 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
   const [moderatorAccessSaving, setModeratorAccessSaving] = useState(false);
   const [overview, setOverview] = useState<any>(null);
   const [pages, setPages]       = useState<ClientPage[]>([]);
+  const [clients, setClients]   = useState<AdminUser[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [globalCfg, setGlobalCfg]       = useState<any>(null);
   const [learningLog, setLearningLog]   = useState<any[]>([]);
   const [loading, setLoading]   = useState(false);
@@ -133,11 +158,19 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
   const [clientLoading, setClientLoading] = useState(false);
   const [editReplies, setEditReplies]   = useState<Record<string, string>>({});
   const [tutorials, setTutorials]       = useState<TutorialsConfig>({});
-  const [clientPageTab, setClientPageTab] = useState<'bot' | 'settings'>('bot');
+  const [clientPageTab, setClientPageTab] = useState<'bot' | 'settings' | 'wallet'>('bot');
   const [pageSettings, setPageSettings]   = useState<any>(null);
   const [pageSettingsSaving, setPageSettingsSaving]   = useState(false);
   const [adminFbAppId, setAdminFbAppId]   = useState('');
   const [adminFbAppSecret, setAdminFbAppSecret] = useState('');
+  const [pageWallet, setPageWallet]       = useState<any>(null);
+  const [pageWalletLoading, setPageWalletLoading] = useState(false);
+  const [pwRecharge, setPwRecharge]       = useState({ creditAmount: '', transactionId: '', note: '' });
+  const [pwRechargeSaving, setPwRechargeSaving] = useState(false);
+  const [pwAdjust, setPwAdjust]           = useState({ creditAmount: '', note: '' });
+  const [pwAdjustSaving, setPwAdjustSaving] = useState(false);
+  const [pwPricing, setPwPricing]         = useState<any>(null);
+  const [pwPricingSaving, setPwPricingSaving] = useState(false);
   const [appCredSaving, setAppCredSaving] = useState(false);
 
   // Call Servers state
@@ -338,10 +371,11 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
   const loadClients = useCallback(async () => {
     setLoading(true);
     try {
-      const [, pg] = await Promise.all([
-        request<ClientPage[]>(`${BASE}/clients`),
+      const [cl, pg] = await Promise.all([
+        request<AdminUser[]>(`${BASE}/clients`),
         request<ClientPage[]>(`${BASE}/pages`),
       ]);
+      setClients(Array.isArray(cl) ? cl : []);
       setPages(pg);
     }
     catch (e: any) { onToast(e.message, 'error'); }
@@ -762,7 +796,7 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
 
   useEffect(() => {
     if (tab === 'overview')                                        loadOverview();
-    if (tab === 'clients')                                         loadClients();
+    if (tab === 'clients' || tab === 'users')                      loadClients();
     if (tab === 'global-questions' || tab === 'global-replies')   loadGlobal();
     if (tab === 'learning-log')                                    loadLog();
     if (tab === 'courier-tutorials')                               loadTutorials();
@@ -954,10 +988,89 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
     finally { setPageReqBusy(null); }
   };
 
+  const loadPageWallet = useCallback(async (pageId: number) => {
+    setPageWalletLoading(true);
+    try {
+      const data = await request<any>(`${BASE}/wallet/${pageId}`);
+      setPageWallet(data);
+      setPwPricing({
+        costPerKeywordReplyCredit: data.page.costPerKeywordReplyCredit,
+        costPerImageCredit: data.page.costPerImageCredit,
+        costPerImageLocalCredit: data.page.costPerImageLocalCredit,
+        costPerOcrLocalCredit: data.page.costPerOcrLocalCredit,
+        costPerOcrAiCredit: data.page.costPerOcrAiCredit,
+        costPerVoiceMsgCredit: data.page.costPerVoiceMsgCredit,
+        costPerAnalyzeCredit: data.page.costPerAnalyzeCredit,
+        costPerAiGenerateCredit: data.page.costPerAiGenerateCredit,
+        costPerBroadcastMsgCredit: data.page.costPerBroadcastMsgCredit,
+        costPerRecurringNotifCredit: data.page.costPerRecurringNotifCredit,
+        costPerCommentReplyCredit: data.page.costPerCommentReplyCredit,
+        costPerMemoPrintCredit: data.page.costPerMemoPrintCredit,
+      });
+    } catch (e: any) { onToast(e.message, 'error'); }
+    finally { setPageWalletLoading(false); }
+  }, [BASE]);
+
+  const pwDoRecharge = async () => {
+    if (!selectedPage) return;
+    const amt = Number(pwRecharge.creditAmount);
+    if (!amt || amt <= 0 || !pwRecharge.transactionId.trim()) {
+      onToast('Amount ও Transaction ID দিন', 'error'); return;
+    }
+    setPwRechargeSaving(true);
+    try {
+      await request(`${BASE}/wallet/${selectedPage.id}/recharge`, {
+        method: 'POST',
+        body: JSON.stringify({
+          creditAmount: amt,
+          transactionId: pwRecharge.transactionId.trim(),
+          note: pwRecharge.note.trim() || undefined,
+        }),
+      });
+      onToast(`✅ ${amt} credit যোগ হয়েছে`, 'success');
+      setPwRecharge({ creditAmount: '', transactionId: '', note: '' });
+      await loadPageWallet(selectedPage.id);
+    } catch (e: any) { onToast(e.message, 'error'); }
+    finally { setPwRechargeSaving(false); }
+  };
+
+  const pwDoAdjust = async () => {
+    if (!selectedPage) return;
+    const amt = Number(pwAdjust.creditAmount);
+    if (!amt) {
+      onToast('Amount দিন (কমাতে negative number দিন, যেমন: -100)', 'error'); return;
+    }
+    setPwAdjustSaving(true);
+    try {
+      await request(`${BASE}/wallet/${selectedPage.id}/adjust`, {
+        method: 'POST',
+        body: JSON.stringify({ creditAmount: amt, note: pwAdjust.note.trim() || undefined }),
+      });
+      onToast(`✅ Balance ${amt > 0 ? '+' : ''}${amt} credit adjust হয়েছে`, 'success');
+      setPwAdjust({ creditAmount: '', note: '' });
+      await loadPageWallet(selectedPage.id);
+    } catch (e: any) { onToast(e.message, 'error'); }
+    finally { setPwAdjustSaving(false); }
+  };
+
+  const pwSavePricing = async () => {
+    if (!selectedPage || !pwPricing) return;
+    setPwPricingSaving(true);
+    try {
+      await request(`${BASE}/wallet/${selectedPage.id}/pricing`, {
+        method: 'PATCH', body: JSON.stringify(pwPricing),
+      });
+      onToast('✅ Page pricing override save হয়েছে', 'success');
+      await loadPageWallet(selectedPage.id);
+    } catch (e: any) { onToast(e.message, 'error'); }
+    finally { setPwPricingSaving(false); }
+  };
+
   const loadPageCfg = async (page: ClientPage) => {
     setSelectedPage(page); setClientCfg(null); setClientLoading(true);
     setPageSettings(null); setClientPageTab('settings');
     setAdminFbAppId(''); setAdminFbAppSecret('');
+    setPageWallet(null); setPwPricing(null);
     try {
       const [cfg, settings, appCreds] = await Promise.all([
         request(`${BASE}/bot-knowledge/page/${page.id}`),
@@ -1072,32 +1185,54 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
       ? AGENT_TABS
       : (secretUnlocked ? [...ADMIN_TABS, SECRET_TAB] : ADMIN_TABS);
     const currentTabHelp = visibleTabs.find(t => t.key === tab)?.help || '';
+    // Preserve declaration order while collecting tabs under their group header.
+    const groups: { name: string; tabs: typeof visibleTabs }[] = [];
+    for (const t of visibleTabs) {
+      let g = groups.find(x => x.name === t.group);
+      if (!g) { g = { name: t.group, tabs: [] }; groups.push(g); }
+      g.tabs.push(t);
+    }
+    const renderTab = (t: typeof visibleTabs[number]) => {
+      const pendingCount = t.key === 'page-requests' && overview?.pendingPageRequests > 0
+        ? overview.pendingPageRequests : 0;
+      const isSecret = t.key === 'customers';
+      const active = tab === t.key;
+      return (
+        <button key={t.key} onClick={() => { setTab(t.key); localStorage.setItem('admin_tab', t.key); }} style={{
+          padding: '8px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
+          fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit',
+          background: active ? (isSecret ? '#7c3aed' : th.accent) : 'transparent',
+          color: active ? '#fff' : (isSecret ? '#7c3aed' : th.muted),
+          transition: 'all .15s',
+          display: 'flex', alignItems: 'center', gap: 5, position: 'relative' as const,
+        }}>
+          <span>{t.icon}</span>{t.label}
+          {pendingCount > 0 && (
+            <span style={{ background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 10, fontWeight: 900, padding: '1px 6px', minWidth: 18, textAlign: 'center' }}>
+              {pendingCount}
+            </span>
+          )}
+        </button>
+      );
+    };
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, background: th.surface, borderRadius: 14, padding: 4, border: `1px solid ${th.border}` }}>
-        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' as const }}>
-          {visibleTabs.map(t => {
-            const pendingCount = t.key === 'page-requests' && overview?.pendingPageRequests > 0
-              ? overview.pendingPageRequests : 0;
-            const isSecret = t.key === 'customers';
-            return (
-              <button key={t.key} onClick={() => { setTab(t.key); localStorage.setItem('admin_tab', t.key); }} style={{
-                padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
-                fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit',
-                background: tab === t.key ? (isSecret ? '#7c3aed' : th.accent) : 'transparent',
-                color: tab === t.key ? '#fff' : (isSecret ? '#7c3aed' : th.muted),
-                transition: 'all .15s',
-                display: 'flex', alignItems: 'center', gap: 5, position: 'relative' as const,
-              }}>
-                <span>{t.icon}</span>{t.label}
-                {pendingCount > 0 && (
-                  <span style={{ background: '#ef4444', color: '#fff', borderRadius: 999, fontSize: 10, fontWeight: 900, padding: '1px 6px', minWidth: 18, textAlign: 'center' }}>
-                    {pendingCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, background: th.surface, borderRadius: 14, padding: 8, border: `1px solid ${th.border}` }}>
+        {groups.map((g, gi) => (
+          <div key={g.name} style={{
+            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const,
+            padding: '4px 2px',
+            borderTop: gi === 0 ? 'none' : `1px solid ${th.border}`,
+            marginTop: gi === 0 ? 0 : 2, paddingTop: gi === 0 ? 4 : 8,
+          }}>
+            <span style={{
+              fontSize: 10, fontWeight: 800, color: th.muted, textTransform: 'uppercase',
+              letterSpacing: '0.06em', minWidth: 96, opacity: 0.75,
+            }}>{g.name}</span>
+            <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' as const, flex: 1 }}>
+              {g.tabs.map(renderTab)}
+            </div>
+          </div>
+        ))}
         {currentTabHelp && (
           <div style={{ fontSize: 12, color: th.muted, padding: '8px 8px 4px', borderTop: `1px solid ${th.border}`, marginTop: 4 }}>
             ℹ️ {currentTabHelp}
@@ -1269,6 +1404,100 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
         </div>
       </div>
     );
+
+  // ── Impersonate handler (shared) ──────────────────────────────────────────
+  const impersonateUser = async (u: { id: string; email?: string | null; username?: string; name?: string }) => {
+    const label = u.email || u.username || u.name || u.id;
+    if (!window.confirm(`"${label}" এর account এ impersonate করে ঢুকবেন?\n\nআপনি তার dashboard এ চলে যাবেন। যেকোনো সময় floating bar থেকে Exit করে admin এ ফিরতে পারবেন।`)) return;
+    setImpersonatingId(u.id);
+    try {
+      const res = await request<{ token: string; user?: { email?: string; username?: string; name?: string } }>(
+        `${BASE}/users/${u.id}/impersonate`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+      );
+      if (!res?.token) throw new Error('Impersonation token পাওয়া যায়নি');
+      startImpersonation(res.token, res.user?.email || res.user?.username || label);
+    } catch (e: any) { onToast(e.message, 'error'); setImpersonatingId(null); }
+  };
+
+  // ── USERS (reference-style table: name · email · credits · used · businesses · status · impersonate)
+  const UsersTab = () => {
+    const q = userSearch.trim().toLowerCase();
+    const rows = !q ? clients : clients.filter(u =>
+      (u.name || '').toLowerCase().includes(q) ||
+      (u.email || '').toLowerCase().includes(q) ||
+      (u.username || '').toLowerCase().includes(q));
+    const fmtCr = (n: number) => `${(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} CR`;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={th.card}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <input style={{ ...th.input, paddingLeft: 34 }} placeholder="Name / email দিয়ে search করুন…"
+                value={userSearch} onChange={e => setUserSearch(e.target.value)} />
+              <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}>🔍</span>
+            </div>
+            <button style={th.btnGhost} onClick={loadClients}>{loading ? <Spinner size={13}/> : '🔄 Refresh'}</button>
+            <div style={{ fontSize: 12.5, color: th.muted, fontWeight: 700 }}>{rows.length} users</div>
+          </div>
+        </div>
+
+        <div style={{ ...th.card, padding: 0, overflow: 'hidden' }}>
+          {loading && !clients.length
+            ? <div style={{ textAlign: 'center', padding: 40 }}><Spinner size={20}/></div>
+            : rows.length === 0
+            ? <EmptyState icon="👤" title="কোনো user নেই" />
+            : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: th.surface, color: th.muted, textAlign: 'left' }}>
+                      {['Name', 'Email', 'Credits', 'Credit Used', 'Businesses', 'Status', 'Impersonate'].map((h, i) => (
+                        <th key={h} style={{
+                          padding: '11px 14px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase',
+                          letterSpacing: '0.04em', whiteSpace: 'nowrap',
+                          textAlign: i >= 2 && i <= 4 ? 'right' : 'left',
+                          borderBottom: `1px solid ${th.border}`,
+                        }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(u => (
+                      <tr key={u.id} style={{ borderBottom: `1px solid ${th.border}` }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 700, whiteSpace: 'nowrap' }}>{u.name || u.username || '—'}</td>
+                        <td style={{ padding: '10px 14px', color: th.muted, whiteSpace: 'nowrap' }}>{u.email || u.username || '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtCr(u.credits)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', color: th.muted, whiteSpace: 'nowrap' }}>{fmtCr(u.creditUsed)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{u.pageCount}</td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <span style={{
+                            ...th.pill, ...(u.isActive !== false ? th.pillGreen : th.pillRed),
+                            fontSize: 10, fontWeight: 800,
+                          }}>{u.isActive !== false ? 'ACTIVE' : 'OFF'}</span>
+                        </td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <button
+                            onClick={() => impersonateUser(u)}
+                            disabled={impersonatingId === u.id}
+                            style={{
+                              padding: '6px 16px', borderRadius: 8, border: `1.5px solid ${th.border}`,
+                              cursor: 'pointer', fontWeight: 800, fontSize: 12, fontFamily: 'inherit',
+                              background: 'transparent', color: th.accent, whiteSpace: 'nowrap',
+                            }}>
+                            {impersonatingId === u.id ? <Spinner size={12}/> : 'Impersonate'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+        </div>
+      </div>
+    );
+  };
 
   // ── CLIENTS ───────────────────────────────────────────────────────────────
   const ClientsTab = () => (
@@ -1465,6 +1694,19 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
                     {selectedPage.owner.isActive !== false ? '🚫 Account OFF করুন' : '✅ Account ON করুন'}
                   </button>
                 )}
+                {selectedPage.owner && (
+                  <button
+                    title="এই user এর account এ login করুন — সব কিছু তার চোখে দেখুন"
+                    style={{
+                      padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                      fontWeight: 800, fontSize: 12, fontFamily: 'inherit',
+                      background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff',
+                    }}
+                    onClick={() => impersonateUser(selectedPage.owner!)}
+                  >
+                    🎭 Impersonate
+                  </button>
+                )}
                 <button
                   style={{
                     padding: '6px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
@@ -1494,8 +1736,8 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
 
           {/* Sub-tabs */}
           <div style={{ display: 'flex', gap: 4, background: th.surface, padding: 4, borderRadius: 10, border: `1px solid ${th.border}` }}>
-            {([['settings','⚙️ Settings'],['bot','🤖 Bot Knowledge']] as const).map(([k, label]) => (
-              <button key={k} onClick={() => setClientPageTab(k)} style={{
+            {([['settings','⚙️ Settings'],['wallet','💰 Wallet'],['bot','🤖 Bot Knowledge']] as const).map(([k, label]) => (
+              <button key={k} onClick={() => { setClientPageTab(k); if (k === 'wallet') loadPageWallet(selectedPage.id); }} style={{
                 flex: 1, padding: '7px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
                 fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit',
                 background: clientPageTab === k ? th.accent : 'transparent',
@@ -1708,6 +1950,97 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
                         </button>
                       )}
                     </div>
+                  </div>
+                </div>
+              )
+            ) : clientPageTab === 'wallet' ? (
+              /* ── Wallet Panel ── */
+              pageWalletLoading && !pageWallet ? (
+                <div style={{ textAlign: 'center', padding: 32 }}><Spinner size={20}/></div>
+              ) : !pageWallet ? null : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Balance header */}
+                  <div style={{ ...th.card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: th.muted, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Credit Balance</div>
+                      <div style={{ fontSize: 26, fontWeight: 900, color: pageWallet.page.creditBalance <= 0 ? '#ef4444' : pageWallet.page.creditBalance < 4000 ? '#f59e0b' : '#22c55e' }}>
+                        {Math.round(pageWallet.page.creditBalance).toLocaleString()} credit
+                      </div>
+                      <span style={{ ...th.pill, ...(pageWallet.page.subscriptionStatus === 'ACTIVE' ? th.pillGreen : th.pillRed), fontSize: 10, marginTop: 4, display: 'inline-block' }}>
+                        {pageWallet.page.subscriptionStatus}
+                      </span>
+                    </div>
+                    <button style={th.btnGhost} onClick={() => loadPageWallet(selectedPage.id)}>{pageWalletLoading ? <Spinner size={13}/> : '🔄'}</button>
+                  </div>
+
+                  {/* Recharge + Adjust */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div style={th.card}>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>💳 Recharge</div>
+                      <input style={{ ...th.input, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} type="number" placeholder="Amount (credit)"
+                        value={pwRecharge.creditAmount} onChange={e => setPwRecharge(f => ({ ...f, creditAmount: e.target.value }))} />
+                      <input style={{ ...th.input, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} placeholder="Transaction ID"
+                        value={pwRecharge.transactionId} onChange={e => setPwRecharge(f => ({ ...f, transactionId: e.target.value }))} />
+                      <input style={{ ...th.input, width: '100%', boxSizing: 'border-box', marginBottom: 10 }} placeholder="Note (optional)"
+                        value={pwRecharge.note} onChange={e => setPwRecharge(f => ({ ...f, note: e.target.value }))} />
+                      <button style={{ ...th.btnPrimary, width: '100%' }} disabled={pwRechargeSaving} onClick={pwDoRecharge}>
+                        {pwRechargeSaving ? <Spinner size={13} color="#fff"/> : '💰 Recharge করুন'}
+                      </button>
+                    </div>
+                    <div style={th.card}>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>⚖️ Adjust (Add/Subtract)</div>
+                      <input style={{ ...th.input, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} type="number" placeholder="Amount — কমাতে negative, যেমন -100"
+                        value={pwAdjust.creditAmount} onChange={e => setPwAdjust(f => ({ ...f, creditAmount: e.target.value }))} />
+                      <input style={{ ...th.input, width: '100%', boxSizing: 'border-box', marginBottom: 10 }} placeholder="Note (optional)"
+                        value={pwAdjust.note} onChange={e => setPwAdjust(f => ({ ...f, note: e.target.value }))} />
+                      <button style={{ ...th.btnGhost, width: '100%', border: `1px solid ${th.border}` }} disabled={pwAdjustSaving} onClick={pwDoAdjust}>
+                        {pwAdjustSaving ? <Spinner size={13}/> : '⚖️ Adjust করুন'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Per-page pricing override */}
+                  <div style={th.card}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>🎯 Per-Page Pricing Override</div>
+                      <div style={{ fontSize: 11, color: th.muted }}>খালি রাখলে global default pricing চলবে এই page-এ</div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {PRICING_FIELDS.filter(f => f.key !== 'creditsPerBdt').map(f => (
+                        <div key={f.key}>
+                          <div style={{ fontSize: 11, color: th.muted, marginBottom: 4 }}>{f.label}</div>
+                          <input style={{ ...th.input, width: '100%', boxSizing: 'border-box' }} type="number" step="0.01"
+                            value={pwPricing?.[f.key] ?? ''}
+                            onChange={e => setPwPricing((p: any) => ({ ...p, [f.key]: e.target.value === '' ? undefined : Number(e.target.value) }))} />
+                        </div>
+                      ))}
+                    </div>
+                    <button style={{ ...th.btnPrimary, marginTop: 12 }} disabled={pwPricingSaving} onClick={pwSavePricing}>
+                      {pwPricingSaving ? <Spinner size={13} color="#fff"/> : '💾 Pricing Override Save করুন'}
+                    </button>
+                  </div>
+
+                  {/* Transaction history */}
+                  <div style={th.card}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>📜 Transaction History ({pageWallet.transactions.length})</div>
+                    {pageWallet.transactions.length === 0 ? (
+                      <div style={{ textAlign: 'center', color: th.muted, padding: 20, fontSize: 12 }}>কোনো transaction নেই।</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 340, overflowY: 'auto' }}>
+                        {pageWallet.transactions.map((t: any) => (
+                          <div key={t.id} style={{ ...th.card2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 8, fontSize: 12 }}>
+                            <div>
+                              <div style={{ fontWeight: 700 }}>{t.type}</div>
+                              <div style={{ color: th.muted, fontSize: 11 }}>{t.description}</div>
+                              <div style={{ color: th.muted, fontSize: 10 }}>{new Date(t.createdAt).toLocaleString('en-BD')}</div>
+                            </div>
+                            <div style={{ fontWeight: 800, color: t.amountCredit >= 0 ? '#22c55e' : '#ef4444' }}>
+                              {t.amountCredit >= 0 ? '+' : ''}{Math.round(t.amountCredit).toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )
@@ -2123,6 +2456,7 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
       <div style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: 18 }}>
         <TabBar />
         {tab === 'overview'          && <OverviewTab />}
+        {tab === 'users'             && <UsersTab />}
         {tab === 'clients'           && <ClientsTab />}
         {tab === 'global-questions'  && (globalCfg ? <GlobalQuestionsTab /> : <div style={{ textAlign: 'center', padding: 40 }}><Spinner size={22}/></div>)}
         {tab === 'global-replies'    && (globalCfg ? <GlobalRepliesTab /> : <div style={{ textAlign: 'center', padding: 40 }}><Spinner size={22}/></div>)}
@@ -2610,6 +2944,10 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
                     { key: 'fallbackAiProvider', label: 'Fallback AI Provider', placeholder: 'openai / gemini' },
                     { key: 'fallbackAiModel', label: 'Fallback AI Model', placeholder: 'gpt-4o-mini' },
                   ]},
+                  { group: '🔀 OpenRouter', fields: [
+                    { key: 'openrouterApiKey', label: 'OpenRouter API Key', secret: true },
+                    { key: 'openrouterModel', label: 'OpenRouter Model', placeholder: 'openai/gpt-4o-mini' },
+                  ]},
                 ] as { group: string; fields: { key: string; label: string; placeholder?: string; secret?: boolean }[] }[]
               ).filter(g => g.group !== '👁 Vision').map(({ group, fields }) => (
                 <div key={group} style={{ marginBottom: 24 }}>
@@ -2631,6 +2969,53 @@ export function AdminPanel({ th, onToast, onLogout, role }: {
                   </div>
                 </div>
               ))}
+
+              {/* ── AI Provider Priority — which one gets tried first for bot replies ── */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: th.accent, marginBottom: 4, borderBottom: `1px solid ${th.border}`, paddingBottom: 6 }}>🎯 AI Provider Priority</div>
+                <div style={{ fontSize: 12, color: th.muted, marginBottom: 10 }}>Bot reply-এর জন্য কোন API আগে try হবে — প্রথমটা fail/unavailable হলে পরেরটায় যাবে।</div>
+                {(() => {
+                  const PROVIDER_OPTIONS = [
+                    { value: 'gemini', label: '✨ Gemini' },
+                    { value: 'openai', label: '🧠 OpenAI' },
+                    { value: 'openrouter', label: '🔀 OpenRouter' },
+                  ];
+                  const DEFAULT_PRIORITY = ['gemini', 'openai', 'openrouter'];
+                  const currentPriority: string[] = (() => {
+                    try {
+                      const parsed = JSON.parse(apiKeysDraft.aiProviderPriority || '[]');
+                      if (Array.isArray(parsed) && parsed.length === 3) return parsed;
+                    } catch {}
+                    return DEFAULT_PRIORITY;
+                  })();
+                  const setPriorityAt = (idx: number, value: string) => {
+                    const next = [...currentPriority];
+                    const otherIdx = next.indexOf(value);
+                    if (otherIdx !== -1 && otherIdx !== idx) next[otherIdx] = next[idx];
+                    next[idx] = value;
+                    setApiKeysDraft(d => ({ ...d, aiProviderPriority: JSON.stringify(next) }));
+                  };
+                  const ORDINAL = ['১ম চেষ্টা', '২য় চেষ্টা', '৩য় চেষ্টা'];
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                      {[0, 1, 2].map(idx => (
+                        <div key={idx}>
+                          <div style={{ fontSize: 12, color: th.muted, marginBottom: 4 }}>{ORDINAL[idx]}</div>
+                          <select
+                            value={currentPriority[idx]}
+                            onChange={e => setPriorityAt(idx, e.target.value)}
+                            style={{ ...th.input, width: '100%', fontSize: 13, boxSizing: 'border-box', cursor: 'pointer' }}
+                          >
+                            {PROVIDER_OPTIONS.map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
 
               {/* ── Vision Smart Config ── */}
               {(() => {

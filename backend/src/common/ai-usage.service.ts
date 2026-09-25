@@ -13,13 +13,15 @@ import { PrismaService } from '../prisma/prisma.service';
 // Filled by the provider-calling code so callers know which provider actually
 // answered and what it cost (real tokens, not guesses).
 export interface AiCallUsage {
-  provider?: 'gemini' | 'openai';
+  provider?: 'gemini' | 'openai' | 'openrouter';
   model?: string;
   promptTokens?: number;
   outputTokens?: number;
 }
 
 const MODEL_PRICING_USD_PER_1M: Record<string, { in: number; out: number }> = {
+  'gemini-3.5-flash-lite': { in: 0.1, out: 0.4 },
+  'gemini-3.5-flash': { in: 0.3, out: 2.5 },
   'gemini-2.5-flash-lite': { in: 0.1, out: 0.4 },
   'gemini-2.5-flash': { in: 0.3, out: 2.5 },
   'gemini-2.0-flash': { in: 0.1, out: 0.4 },
@@ -57,7 +59,7 @@ export class AiUsageService {
    */
   async record(input: {
     pageId?: number | null;
-    provider: 'gemini' | 'openai';
+    provider: 'gemini' | 'openai' | 'openrouter';
     model: string;
     usageType: string;
     promptTokens?: number | null;

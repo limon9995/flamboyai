@@ -1001,7 +1001,7 @@ export class OcrService {
     }
 
     const base64 = rawBuffer.toString('base64');
-    const model = this.apiKeysService.getSync('visionModel') || 'gemini-2.5-flash';
+    const model = this.apiKeysService.getSync('visionModel') || 'gemini-3.5-flash';
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const start = Date.now();
 

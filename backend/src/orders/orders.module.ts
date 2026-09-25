@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { OrderNotificationService } from './order-notification.service';
@@ -13,6 +13,7 @@ import { BroadcastModule } from '../broadcast/broadcast.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { FollowUpModule } from '../followup/followup.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { CourierModule } from '../courier/courier.module';
 
 @Module({
   imports: [
@@ -25,6 +26,10 @@ import { PricingModule } from '../pricing/pricing.module';
     TelegramModule,
     FollowUpModule,
     PricingModule,
+    // CourierModule imports OrdersModule (for OrderNotificationService), so
+    // this side of the cycle needs forwardRef — see OrdersService's
+    // autoBookOnConfirm() calls into CourierService.
+    forwardRef(() => CourierModule),
   ],
   controllers: [OrdersController],
   providers: [

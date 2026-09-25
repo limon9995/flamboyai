@@ -150,6 +150,10 @@ export class PageService {
 
     if (typeof body.knowledgeText === 'string')
       data.knowledgeText = body.knowledgeText.slice(0, 3000);
+    if (typeof body.customPersonaPrompt === 'string')
+      data.customPersonaPrompt = body.customPersonaPrompt.trim().slice(0, 4000) || null;
+    if (typeof body.behaviorInstructions === 'string')
+      data.behaviorInstructions = body.behaviorInstructions.trim().slice(0, 3000);
     if (typeof body.businessName === 'string')
       data.businessName = body.businessName.trim();
     if (typeof body.businessPhone === 'string')
